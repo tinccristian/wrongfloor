@@ -9,7 +9,7 @@ int main(void)
     InitWindow(screenWidth, screenHeight, "wrongfloor");
     SetTargetFPS(60);
 
-    GameState state = { 0 };
+    GameState state{};
     player_init(&state.player, Vector2{ screenWidth * 0.5f, screenHeight * 0.5f });
 
     while (!WindowShouldClose())
@@ -26,6 +26,7 @@ int main(void)
         EndDrawing();
     }
 
+    player_cleanup(&state.player);
     CloseWindow();
     return 0;
 }

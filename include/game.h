@@ -2,6 +2,6 @@
 
 #include "player.h"
 
-typedef struct {
+struct GameState {
     Player player;
-} GameState;
+};
