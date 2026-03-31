@@ -1,0 +1,25 @@
+# Build output
+build/
+
+# IDE / editor junk
+.vs/
+.vscode/
+*.swp
+*.swo
+*~
+.idea/
+*.user
+CMakeUserPresets.json
+
+# OS junk
+Thumbs.db
+Desktop.ini
+.DS_Store
+
+# Compiled binaries
+*.exe
+*.dll
+*.lib
+*.a
+*.o
+*.obj
