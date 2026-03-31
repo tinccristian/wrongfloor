@@ -21,8 +21,10 @@ int main(void)
 
         // Draw
         BeginDrawing();
-            ClearBackground(RAYWHITE);
+            ClearBackground(Color{185, 188, 192, 255});
             player_draw(&state.player);
+            if constexpr (DEBUG_GROUND)
+                DrawLineEx(Vector2{0.0f, GROUND_Y}, Vector2{(float)screenWidth, GROUND_Y}, 3.0f, Color{90, 90, 90, 220});
         EndDrawing();
     }
 
