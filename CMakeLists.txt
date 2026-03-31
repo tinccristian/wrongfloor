@@ -1,8 +1,8 @@
 cmake_minimum_required(VERSION 3.20)
-project(wrongfloor LANGUAGES C)
+project(wrongfloor LANGUAGES CXX)
 
-set(CMAKE_C_STANDARD 99)
-set(CMAKE_C_STANDARD_REQUIRED ON)
+set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 # ── Raylib via FetchContent ──────────────────────────────
@@ -19,7 +19,7 @@ FetchContent_MakeAvailable(raylib)
 
 # ── Sources ──────────────────────────────────────────────
 file(GLOB_RECURSE SOURCES CONFIGURE_DEPENDS
-    ${CMAKE_SOURCE_DIR}/src/*.c
+    ${CMAKE_SOURCE_DIR}/src/*.cpp
 )
 
 # ── Executable ───────────────────────────────────────────

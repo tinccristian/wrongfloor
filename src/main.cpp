@@ -1,4 +1,5 @@
 #include "raylib.h"
+#include "game.h"
 
 int main(void)
 {
@@ -8,11 +9,20 @@ int main(void)
     InitWindow(screenWidth, screenHeight, "wrongfloor");
     SetTargetFPS(60);
 
+    GameState state = { 0 };
+    player_init(&state.player, Vector2{ screenWidth * 0.5f, screenHeight * 0.5f });
+
     while (!WindowShouldClose())
     {
+        float dt = GetFrameTime();
+
+        // Input + update
+        player_update(&state.player, dt);
+
+        // Draw
         BeginDrawing();
             ClearBackground(RAYWHITE);
-            DrawText("wrongfloor is alive", 400, 340, 30, DARKGRAY);
+            player_draw(&state.player);
         EndDrawing();
     }
 
