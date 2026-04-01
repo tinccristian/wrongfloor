@@ -36,6 +36,7 @@ struct PlayerSoundTriggers {
 
 struct Player {
     Vector2     position;   // top-left of the 96×96 sprite
+    float       velocity_x = 0.0f; // last-frame horizontal velocity (px/s), for debug display
     float       velocity_y;
     bool        grounded;
     bool        attacking;
@@ -64,7 +65,9 @@ void player_init(Player *player, Vector2 start_pos);
 
 // Process input, run tile collision, update state and animation.
 // Fills *triggers with sound events that fired this frame.
-void player_update(Player *player, const Tilemap *tm, float dt, PlayerSoundTriggers *triggers);
+// Pass input_blocked=true to suppress all player input (e.g. when the debug console is open).
+void player_update(Player *player, const Tilemap *tm, float dt,
+                   PlayerSoundTriggers *triggers, bool input_blocked = false);
 
 // Draw the animated sprite.
 void player_draw(const Player *player);

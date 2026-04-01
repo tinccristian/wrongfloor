@@ -156,7 +156,8 @@ static void resolve_horizontal(Player *player, const Tilemap *tm, float dir_x)
 
 // ─────────────────────────────────────────────────────────────────────────────
 
-void player_update(Player *player, const Tilemap *tm, float dt, PlayerSoundTriggers *triggers)
+void player_update(Player *player, const Tilemap *tm, float dt,
+                   PlayerSoundTriggers *triggers, bool input_blocked)
 {
     *triggers = PlayerSoundTriggers{};
 
@@ -167,12 +168,12 @@ void player_update(Player *player, const Tilemap *tm, float dt, PlayerSoundTrigg
                        player->state == PLAYER_FALLING);
 
     // ── Input ─────────────────────────────────────────────────────────
-    bool kb_left        = IsKeyDown(KEY_LEFT)        || IsKeyDown(KEY_A);
-    bool kb_right       = IsKeyDown(KEY_RIGHT)       || IsKeyDown(KEY_D);
-    bool kb_run         = IsKeyDown(KEY_LEFT_SHIFT)  || IsKeyDown(KEY_RIGHT_SHIFT);
-    bool jump_pressed   = IsKeyPressed(KEY_SPACE);
-    bool jump_held      = IsKeyDown(KEY_SPACE);
-    bool attack_pressed = IsMouseButtonPressed(MOUSE_BUTTON_LEFT) || IsKeyPressed(KEY_X);
+    bool kb_left        = !input_blocked && (IsKeyDown(KEY_LEFT)       || IsKeyDown(KEY_A));
+    bool kb_right       = !input_blocked && (IsKeyDown(KEY_RIGHT)      || IsKeyDown(KEY_D));
+    bool kb_run         = !input_blocked && (IsKeyDown(KEY_LEFT_SHIFT) || IsKeyDown(KEY_RIGHT_SHIFT));
+    bool jump_pressed   = !input_blocked && IsKeyPressed(KEY_SPACE);
+    bool jump_held      = !input_blocked && IsKeyDown(KEY_SPACE);
+    bool attack_pressed = !input_blocked && (IsMouseButtonPressed(MOUSE_BUTTON_LEFT) || IsKeyPressed(KEY_X));
 
     float dir_x = 0.0f;
     bool  run   = false;
@@ -204,16 +205,31 @@ void player_update(Player *player, const Tilemap *tm, float dt, PlayerSoundTrigg
         player->velocity_y = -JUMP_CUT_VY;
 
     // ── Gravity and vertical movement ─────────────────────────────────
-    float grav = (player->velocity_y < 0.0f) ? GRAVITY_UP : GRAVITY_DOWN;
-    player->grounded    = false;
-    player->velocity_y += grav * dt;
-    player->position.y += player->velocity_y * dt;
+    bool prev_grounded = player->grounded;
+    player->grounded   = false;
+
+    if (prev_grounded && player->velocity_y >= 0.0f)
+    {
+        // Was on the ground and not jumping: zero accumulated velocity and probe
+        // downward by a fixed amount so resolve_vertical snaps back to the exact
+        // tile boundary. This eliminates floating-point drift from accumulated
+        // grav*dt increments over many frames.
+        player->velocity_y  = 0.0f;
+        player->position.y += 4.0f; // small constant probe — always < TILE_SIZE
+    }
+    else
+    {
+        float grav = (player->velocity_y < 0.0f) ? GRAVITY_UP : GRAVITY_DOWN;
+        player->velocity_y += grav * dt;
+        player->position.y += player->velocity_y * dt;
+    }
 
     resolve_vertical(player, tm);
 
     // ── Horizontal movement ───────────────────────────────────────────
     float speed = run ? RUN_SPEED : WALK_SPEED;
-    player->position.x += dir_x * speed * dt;
+    player->velocity_x = dir_x * speed;
+    player->position.x += player->velocity_x * dt;
     resolve_horizontal(player, tm, dir_x);
 
     // ── Coyote time ───────────────────────────────────────────────────

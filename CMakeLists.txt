@@ -44,6 +44,12 @@ target_include_directories(${PROJECT_NAME} PRIVATE
 
 target_link_libraries(${PROJECT_NAME} PRIVATE raylib nlohmann_json::nlohmann_json)
 
+# ── DEV_MODE: on for Debug builds and for the default no-config Ninja build ──
+target_compile_definitions(${PROJECT_NAME} PRIVATE
+    $<$<CONFIG:Debug>:DEV_MODE>
+    $<$<CONFIG:>:DEV_MODE>
+)
+
 # ── Copy assets next to binary ───────────────────────────
 add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy_directory
