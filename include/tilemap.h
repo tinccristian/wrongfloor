@@ -36,8 +36,12 @@ struct Tilemap {
 // Parse a Tiled .tmj file and load the referenced tileset texture.
 bool tilemap_load(Tilemap *tm, const std::string& path);
 
-// Draw every non-empty tile in the named layer. No-op if layer is absent.
+// Draw every non-empty tile in the named layer (exact match). No-op if absent.
 void tilemap_draw_layer(const Tilemap *tm, const std::string& name);
+
+// Draw all layers whose name starts with prefix, in file order.
+// e.g. prefix "background" matches "background", "background1", "background2", etc.
+void tilemap_draw_layers_prefixed(const Tilemap *tm, const std::string& prefix);
 
 // Returns true if the tile at (tile_x, tile_y) in the "collision" layer is non-zero.
 bool tilemap_is_solid(const Tilemap *tm, int tile_x, int tile_y);

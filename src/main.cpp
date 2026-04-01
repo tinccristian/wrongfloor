@@ -38,10 +38,18 @@ int main(void)
         camera_update(&state.camera, centre, &state.tilemap, screenWidth, screenHeight, dt);
 
         // ── Audio ─────────────────────────────────────────────────────
+        PlayerState ps = state.player.state;
+
+        // Play on trigger
         if (triggers.footstep_walk) audio_play_sfx(&state.audio, state.audio.snd_walk);
         if (triggers.footstep_run)  audio_play_sfx(&state.audio, state.audio.snd_run);
         if (triggers.landed)        audio_play_sfx(&state.audio, state.audio.snd_land);
         if (triggers.attacked)      audio_play_sfx_pitched(&state.audio, state.audio.snd_attack, 0.85f, 1.15f);
+
+        // Stop sounds whose state is no longer active
+        if (ps != PLAYER_WALKING)   StopSound(state.audio.snd_walk);
+        if (ps != PLAYER_RUNNING)   StopSound(state.audio.snd_run);
+        if (ps != PLAYER_ATTACKING) StopSound(state.audio.snd_attack);
 
         // ── Level transition ──────────────────────────────────────────
         const TileObject *exit = tilemap_get_object(&state.tilemap, "level_exit");
@@ -66,10 +74,10 @@ int main(void)
             ClearBackground(Color{30, 28, 36, 255});
 
             BeginMode2D(state.camera.cam);
-                tilemap_draw_layer(&state.tilemap, "background");
-                tilemap_draw_layer(&state.tilemap, "midground");
+                tilemap_draw_layers_prefixed(&state.tilemap, "background");
+                tilemap_draw_layers_prefixed(&state.tilemap, "midground");
                 player_draw(&state.player);
-                tilemap_draw_layer(&state.tilemap, "foreground");
+                tilemap_draw_layers_prefixed(&state.tilemap, "foreground");
             EndMode2D();
 
         EndDrawing();

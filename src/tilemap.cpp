@@ -98,38 +98,50 @@ bool tilemap_load(Tilemap *tm, const std::string& path)
     return true;
 }
 
+static void draw_layer(const Tilemap *tm, const TileLayer& layer)
+{
+    for (int ty = 0; ty < layer.height; ty++)
+    for (int tx = 0; tx < layer.width;  tx++)
+    {
+        int id = layer.data[ty * layer.width + tx];
+        if (id <= 0) continue;
+
+        int local   = id - tm->tileset_firstgid;
+        int src_col = local % tm->tileset_columns;
+        int src_row = local / tm->tileset_columns;
+
+        Rectangle src = {
+            (float)(src_col * tm->tile_width),
+            (float)(src_row * tm->tile_height),
+            (float)tm->tile_width,
+            (float)tm->tile_height
+        };
+        Vector2 dest = {
+            (float)(tx * tm->tile_width),
+            (float)(ty * tm->tile_height)
+        };
+
+        DrawTextureRec(tm->tileset, src, dest, WHITE);
+    }
+}
+
 void tilemap_draw_layer(const Tilemap *tm, const std::string& name)
 {
     if (!tm) return;
-
     for (const auto& layer : tm->tile_layers)
+        if (layer.name == name) { draw_layer(tm, layer); break; }
+}
+
+void tilemap_draw_layers_prefixed(const Tilemap *tm, const std::string& prefix)
+{
+    if (!tm) return;
+    // Tiled exports layers top-to-bottom (foreground first, deepest background last).
+    // Draw in reverse so the bottommost layer in Tiled (last in file) renders behind.
+    for (int i = (int)tm->tile_layers.size() - 1; i >= 0; i--)
     {
-        if (layer.name != name) continue;
-
-        for (int ty = 0; ty < layer.height; ty++)
-        for (int tx = 0; tx < layer.width;  tx++)
-        {
-            int id = layer.data[ty * layer.width + tx];
-            if (id <= 0) continue;
-
-            int local  = id - tm->tileset_firstgid;
-            int src_col = local % tm->tileset_columns;
-            int src_row = local / tm->tileset_columns;
-
-            Rectangle src = {
-                (float)(src_col * tm->tile_width),
-                (float)(src_row * tm->tile_height),
-                (float)tm->tile_width,
-                (float)tm->tile_height
-            };
-            Vector2 dest = {
-                (float)(tx * tm->tile_width),
-                (float)(ty * tm->tile_height)
-            };
-
-            DrawTextureRec(tm->tileset, src, dest, WHITE);
-        }
-        break;
+        const auto& layer = tm->tile_layers[i];
+        if (layer.name.rfind(prefix, 0) == 0)
+            draw_layer(tm, layer);
     }
 }
 
