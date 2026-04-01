@@ -9,9 +9,10 @@ struct BloodPixel {
     Vector2 position{};
     Vector2 velocity{};
     float   age          = 0.0f;
-    float   max_lifetime = 2.0f; // safety cap; pixels normally settle via speed long before this
-    int     size         = 1;    // world-space pixel edge length (1, 2, or 3)
+    float   max_lifetime = 3.0f; // safety cap; pixels normally settle via speed long before this
+    int     size         = 3;    // world-space pixel edge length — uniform for art consistency
     Color   color{};
+    bool    is_spear     = false; // high-velocity pixel; leaves wall smear on impact
     bool    settled      = false;
 };
 

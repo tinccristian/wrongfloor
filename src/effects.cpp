@@ -4,59 +4,102 @@
 #include <cmath>
 #include <cstdlib>
 
-// ── Constants ─────────────────────────────────────────────────────────────────
+// ── Pixel size ────────────────────────────────────────────────────────────────
+// Uniform 3x3 world-space pixels — one "art pixel" in a 32px-tile world.
+static constexpr int PIXEL_SIZE = 3;
 
-// Splatter burst (immediate on hit)
-static constexpr int   SPLATTER_COUNT_MIN    = 40;
-static constexpr int   SPLATTER_COUNT_MAX    = 80;
-static constexpr float SPLATTER_SPEED_MIN    = 300.0f;
-static constexpr float SPLATTER_SPEED_MAX    = 600.0f;
-static constexpr float SPLATTER_CONE_HALF    = 0.70f;  // half-angle in radians (~40°) for forward cone
-// 60% of pixels go into the forward cone, 40% scatter fully random.
-static constexpr float SPLATTER_FORWARD_FRAC = 0.60f;
+// ── Initial splatter burst ────────────────────────────────────────────────────
+static constexpr int   SPLATTER_COUNT_MIN    = 150;
+static constexpr int   SPLATTER_COUNT_MAX    = 250;
+static constexpr float SPLATTER_SPEED_MIN    = 500.0f;
+static constexpr float SPLATTER_SPEED_MAX    = 900.0f;
+// 120° wide fan: 70% go into the cone, 30% scatter randomly for the messy look.
+static constexpr float SPLATTER_CONE_HALF    = 1.047f;  // ±60°
+static constexpr float SPLATTER_FWD_FRAC     = 0.70f;
 
-// Ooze sources (slow pooling trickle after the burst)
-static constexpr int   OOZE_SRC_COUNT_MIN   = 5;
-static constexpr int   OOZE_SRC_COUNT_MAX   = 10;
-static constexpr float OOZE_DURATION_MIN    = 1.0f;   // seconds each source emits
-static constexpr float OOZE_DURATION_MAX    = 2.0f;
-static constexpr float OOZE_INTERVAL_MIN    = 0.10f;  // seconds between emissions
-static constexpr float OOZE_INTERVAL_MAX    = 0.20f;
-static constexpr float OOZE_SPEED_MIN       = 10.0f;
-static constexpr float OOZE_SPEED_MAX       = 30.0f;
-static constexpr float OOZE_SCATTER         = 6.0f;   // spawn position jitter radius
+// High-velocity "spear" pixels — fly much further, smear on walls.
+static constexpr int   SPEAR_COUNT_MIN       = 10;
+static constexpr int   SPEAR_COUNT_MAX       = 20;
+static constexpr float SPEAR_SPEED_MIN       = 800.0f;
+static constexpr float SPEAR_SPEED_MAX       = 1200.0f;
+static constexpr float SPEAR_CONE_HALF       = 1.047f;  // same 120° cone
 
-// Physics
-// Drag applied as powf(DRAG_BASE, dt * 60) — frame-rate independent.
-// At 60 fps this is exactly DRAG_BASE per frame; at any other rate the
-// deceleration curve in real-time is identical.
-static constexpr float DRAG_BASE            = 0.90f;
-static constexpr float SETTLE_SPEED         = 10.0f;  // px/sec — below this the pixel stops
+// ── Fountain (sustained spray for first 0.3 s) ────────────────────────────────
+static constexpr float FOUNTAIN_DURATION     = 0.30f;
+static constexpr float FOUNTAIN_INTERVAL     = 0.020f;  // emit every 20 ms
+static constexpr int   FOUNTAIN_EMIT_MIN     = 3;
+static constexpr int   FOUNTAIN_EMIT_MAX     = 5;
+static constexpr float FOUNTAIN_SPEED_MIN    = 300.0f;
+static constexpr float FOUNTAIN_SPEED_MAX    = 700.0f;
+static constexpr float FOUNTAIN_CONE_HALF    = 0.785f;  // ±45° — tighter than burst
 
-// Active pixel cap (settled stains have no cap).
-static constexpr int   PIXEL_CAP            = 500;
+// ── Ooze sources (pool formation over 2-3 s) ──────────────────────────────────
+static constexpr int   OOZE_SRC_COUNT_MIN    = 15;
+static constexpr int   OOZE_SRC_COUNT_MAX    = 25;
+static constexpr float OOZE_DURATION_MIN     = 2.0f;
+static constexpr float OOZE_DURATION_MAX     = 3.0f;
+static constexpr float OOZE_INTERVAL_MIN     = 0.050f;  // fast emission for density
+static constexpr float OOZE_INTERVAL_MAX     = 0.100f;
+static constexpr int   OOZE_EMIT_MIN         = 2;
+static constexpr int   OOZE_EMIT_MAX         = 3;
+static constexpr float OOZE_SPEED_MIN        = 15.0f;
+static constexpr float OOZE_SPEED_MAX        = 55.0f;
+static constexpr float OOZE_SCATTER          = 35.0f;   // source jitter radius
 
-// ── Blood colour palette ──────────────────────────────────────────────────────
+// ── Physics ───────────────────────────────────────────────────────────────────
+// Frame-rate-independent: velocity *= powf(DRAG_BASE, dt * 60).
+// At 60 fps this is exactly DRAG_BASE per frame.
+static constexpr float DRAG_BASE             = 0.90f;
+static constexpr float SETTLE_SPEED          = 12.0f;   // px/sec — below this, pixel stops
 
-static const Color BLOOD_PALETTE[] = {
-    { 139,  0,  0, 255 }, // dark crimson
-    { 200,  0,  0, 255 }, // bright red
-    { 100,  0,  0, 255 }, // deep maroon
-    {  60,  0,  0, 255 }, // near-black
+// ── Wall smear ────────────────────────────────────────────────────────────────
+static constexpr int   WALL_SMEAR_COUNT      = 3;       // extra settled pixels per spear impact
+static constexpr float WALL_SMEAR_SCATTER    = 5.0f;    // px scatter around impact point
+
+// ── Active pixel cap ──────────────────────────────────────────────────────────
+static constexpr int   PIXEL_CAP             = 2000;
+
+// ── Colour palettes ───────────────────────────────────────────────────────────
+
+// In-flight splatter: bright and fresh.
+static const Color SPLATTER_COLORS[] = {
+    { 220, 10, 10, 255 },   // fresh bright red     (most common)
+    { 220, 10, 10, 255 },   // duplicate — higher weight
+    { 200,  5,  5, 255 },   // slightly dimmer red
+    { 180,  0,  0, 255 },   // medium red
+    { 230, 50, 50, 255 },   // pinkish highlight    (rare)
 };
-static constexpr int PALETTE_SIZE = 4;
+static constexpr int SPLATTER_COLOR_COUNT = 5;
 
-// ── Ooze source (module-private — not exposed in EffectsSystem) ───────────────
+// Settled stains and ooze: dark pooling blood.
+static const Color SETTLE_COLORS[] = {
+    { 120,  0,  0, 255 },   // dark crimson
+    { 100,  0,  0, 255 },   // darker
+    {  80,  0,  0, 255 },   // very dark
+    {  50,  0,  0, 255 },   // near-black  (most common)
+    {  50,  0,  0, 255 },   // duplicate — higher weight
+};
+static constexpr int SETTLE_COLOR_COUNT = 5;
+
+// ── Module-private source types ───────────────────────────────────────────────
+
+struct FountainSource {
+    Vector2 position{};
+    Vector2 direction{};    // bias direction inherited from bullet
+    float   age           = 0.0f;
+    float   emit_timer    = 0.0f;
+};
 
 struct OozeSource {
     Vector2 position{};
     float   age           = 0.0f;
-    float   duration      = 1.5f;
+    float   duration      = 2.5f;
     float   emit_timer    = 0.0f;
-    float   emit_interval = 0.15f;
+    float   emit_interval = 0.07f;
 };
 
-static std::vector<OozeSource> s_ooze_sources;
+static std::vector<FountainSource> s_fountains;
+static std::vector<OozeSource>     s_ooze_sources;
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -70,55 +113,65 @@ static int randi(int lo, int hi)
     return lo + std::rand() % (hi - lo + 1);
 }
 
-static int random_pixel_size()
+static Color splatter_color()
 {
-    // Weighted: 1px = 50%, 2px = 33%, 3px = 17%
-    int r = randi(0, 5);
-    if (r < 3) return 1;
-    if (r < 5) return 2;
-    return 3;
+    return SPLATTER_COLORS[randi(0, SPLATTER_COLOR_COUNT - 1)];
 }
 
-static Color random_blood_color()
+static Color settle_color()
 {
-    Color base = BLOOD_PALETTE[randi(0, PALETTE_SIZE - 1)];
-    // Per-channel ±15 noise so no two pixels are identical.
-    auto vary = [](int v, int d) -> unsigned char {
-        int result = v + d;
-        return (unsigned char)(result < 0 ? 0 : result > 255 ? 255 : result);
-    };
-    return Color{
-        vary(base.r, randi(-15, 15)),
-        vary(base.g, randi(-15, 15)),
-        vary(base.b, randi(-15, 15)),
-        255
-    };
+    return SETTLE_COLORS[randi(0, SETTLE_COLOR_COUNT - 1)];
 }
 
-// Tile coordinate from world pixel position.
 static int to_tile(float px) { return (int)floorf(px / (float)TILE_SIZE); }
 
+// Transfer a pixel to the permanent stain list with a darkened pooling colour.
 static void settle_pixel(EffectsSystem *effects, BloodPixel &p)
 {
     p.settled = true;
     SettledPixel s;
     s.position = p.position;
     s.size     = p.size;
-    s.color    = p.color;
+    s.color    = settle_color();
     effects->stains.push_back(s);
 }
 
-static BloodPixel make_pixel(Vector2 origin, Vector2 dir, float speed)
+// Spawn small wall-smear stains around a spear impact point.
+static void spawn_wall_smear(EffectsSystem *effects, Vector2 impact)
+{
+    for (int i = 0; i < WALL_SMEAR_COUNT; ++i)
+    {
+        SettledPixel s;
+        s.position = { impact.x + randf(-WALL_SMEAR_SCATTER, WALL_SMEAR_SCATTER),
+                       impact.y + randf(-WALL_SMEAR_SCATTER, WALL_SMEAR_SCATTER) };
+        s.size  = PIXEL_SIZE;
+        s.color = settle_color();
+        effects->stains.push_back(s);
+    }
+}
+
+static BloodPixel make_pixel(Vector2 origin, Vector2 dir, float speed,
+                             Color color, bool is_spear = false)
 {
     BloodPixel p;
     p.position     = origin;
     p.velocity     = Vector2Scale(dir, speed);
     p.age          = 0.0f;
-    p.max_lifetime = 2.0f;
-    p.size         = random_pixel_size();
-    p.color        = random_blood_color();
+    p.max_lifetime = 3.0f;
+    p.size         = PIXEL_SIZE;
+    p.color        = color;
+    p.is_spear     = is_spear;
     p.settled      = false;
     return p;
+}
+
+// Emit a pixel if under the cap.  Returns false when the cap is reached.
+static bool try_emit(EffectsSystem *effects, Vector2 origin, Vector2 dir,
+                     float speed, Color color, bool is_spear = false)
+{
+    if ((int)effects->pixels.size() >= PIXEL_CAP) return false;
+    effects->pixels.push_back(make_pixel(origin, dir, speed, color, is_spear));
+    return true;
 }
 
 // ── Public API ────────────────────────────────────────────────────────────────
@@ -130,37 +183,51 @@ void effects_spawn_blood(EffectsSystem *effects, Vector2 position, Vector2 bulle
         : Vector2{ 0.0f, 1.0f };
 
     float fwd_angle = atan2f(fwd.y, fwd.x);
-    int   count     = randi(SPLATTER_COUNT_MIN, SPLATTER_COUNT_MAX);
-    int   forward_n = (int)(count * SPLATTER_FORWARD_FRAC);
+    static constexpr float TWO_PI = 6.2831853f;
+
+    // ── Regular splatter burst ────────────────────────────────────────
+    int count    = randi(SPLATTER_COUNT_MIN, SPLATTER_COUNT_MAX);
+    int forward_n = (int)(count * SPLATTER_FWD_FRAC);
 
     for (int i = 0; i < count; ++i)
     {
-        Vector2 dir;
-        if (i < forward_n)
-        {
-            // Forward cone: ±SPLATTER_CONE_HALF radians around bullet direction.
-            float angle = fwd_angle + randf(-SPLATTER_CONE_HALF, SPLATTER_CONE_HALF);
-            dir = { cosf(angle), sinf(angle) };
-        }
-        else
-        {
-            // Full random scatter for the remaining 40%.
-            float angle = randf(0.0f, 2.0f * 3.14159265f);
-            dir = { cosf(angle), sinf(angle) };
-        }
-
-        if ((int)effects->pixels.size() >= PIXEL_CAP) break;
-        effects->pixels.push_back(make_pixel(position, dir,
-                                             randf(SPLATTER_SPEED_MIN, SPLATTER_SPEED_MAX)));
+        float angle = (i < forward_n)
+            ? fwd_angle + randf(-SPLATTER_CONE_HALF, SPLATTER_CONE_HALF)
+            : randf(0.0f, TWO_PI);
+        Vector2 dir = { cosf(angle), sinf(angle) };
+        if (!try_emit(effects, position, dir,
+                      randf(SPLATTER_SPEED_MIN, SPLATTER_SPEED_MAX), splatter_color()))
+            break;
     }
 
-    // Register ooze sources for the slow post-burst pooling.
+    // ── High-velocity spear pixels ────────────────────────────────────
+    int spear_n = randi(SPEAR_COUNT_MIN, SPEAR_COUNT_MAX);
+    for (int i = 0; i < spear_n; ++i)
+    {
+        float angle = fwd_angle + randf(-SPEAR_CONE_HALF, SPEAR_CONE_HALF);
+        Vector2 dir = { cosf(angle), sinf(angle) };
+        if (!try_emit(effects, position, dir,
+                      randf(SPEAR_SPEED_MIN, SPEAR_SPEED_MAX), splatter_color(), true))
+            break;
+    }
+
+    // ── Fountain source (sustains spray for 0.3 s) ───────────────────
+    FountainSource f;
+    f.position   = position;
+    f.direction  = fwd;
+    f.age        = 0.0f;
+    f.emit_timer = 0.0f;
+    s_fountains.push_back(f);
+
+    // ── Ooze sources (pool formation over 2-3 s) ─────────────────────
     int src_count = randi(OOZE_SRC_COUNT_MIN, OOZE_SRC_COUNT_MAX);
     for (int i = 0; i < src_count; ++i)
     {
         OozeSource src;
-        src.position      = { position.x + randf(-OOZE_SCATTER, OOZE_SCATTER),
-                               position.y + randf(-OOZE_SCATTER, OOZE_SCATTER) };
+        float angle  = randf(0.0f, TWO_PI);
+        float dist   = randf(0.0f, OOZE_SCATTER);
+        src.position  = { position.x + cosf(angle) * dist,
+                          position.y + sinf(angle) * dist };
         src.age           = 0.0f;
         src.duration      = randf(OOZE_DURATION_MIN, OOZE_DURATION_MAX);
         src.emit_timer    = 0.0f;
@@ -171,7 +238,38 @@ void effects_spawn_blood(EffectsSystem *effects, Vector2 position, Vector2 bulle
 
 void effects_update(EffectsSystem *effects, const Tilemap *tm, float dt)
 {
-    // ── Ooze source emission ───────────────────────────────────────────
+    static constexpr float TWO_PI = 6.2831853f;
+
+    // ── Fountain emission ─────────────────────────────────────────────
+    for (auto& f : s_fountains)
+    {
+        f.age        += dt;
+        f.emit_timer += dt;
+
+        if (f.emit_timer >= FOUNTAIN_INTERVAL)
+        {
+            f.emit_timer -= FOUNTAIN_INTERVAL;
+
+            // Velocity tapers from full → 0 over the fountain lifetime.
+            float taper   = 1.0f - (f.age / FOUNTAIN_DURATION);
+            float fwd_angle = atan2f(f.direction.y, f.direction.x);
+            int n = randi(FOUNTAIN_EMIT_MIN, FOUNTAIN_EMIT_MAX);
+            for (int i = 0; i < n; ++i)
+            {
+                float angle = fwd_angle + randf(-FOUNTAIN_CONE_HALF, FOUNTAIN_CONE_HALF);
+                Vector2 dir = { cosf(angle), sinf(angle) };
+                float speed = randf(FOUNTAIN_SPEED_MIN, FOUNTAIN_SPEED_MAX) * taper;
+                if (!try_emit(effects, f.position, dir, speed, splatter_color())) break;
+            }
+        }
+    }
+
+    s_fountains.erase(
+        std::remove_if(s_fountains.begin(), s_fountains.end(),
+                       [](const FountainSource& f) { return f.age >= FOUNTAIN_DURATION; }),
+        s_fountains.end());
+
+    // ── Ooze emission ─────────────────────────────────────────────────
     for (auto& src : s_ooze_sources)
     {
         src.age        += dt;
@@ -180,16 +278,14 @@ void effects_update(EffectsSystem *effects, const Tilemap *tm, float dt)
         if (src.emit_timer >= src.emit_interval)
         {
             src.emit_timer -= src.emit_interval;
-            int n = randi(1, 2);
+            int n = randi(OOZE_EMIT_MIN, OOZE_EMIT_MAX);
             for (int i = 0; i < n; ++i)
             {
-                if ((int)effects->pixels.size() >= PIXEL_CAP) break;
-                float angle = randf(0.0f, 2.0f * 3.14159265f);
+                float angle = randf(0.0f, TWO_PI);
                 Vector2 dir = { cosf(angle), sinf(angle) };
-                Vector2 origin = { src.position.x + randf(-2.0f, 2.0f),
-                                   src.position.y + randf(-2.0f, 2.0f) };
-                effects->pixels.push_back(make_pixel(origin, dir,
-                                                     randf(OOZE_SPEED_MIN, OOZE_SPEED_MAX)));
+                // Ooze pixels use the settle palette — they're pooling blood, not fresh spray.
+                if (!try_emit(effects, src.position, dir,
+                              randf(OOZE_SPEED_MIN, OOZE_SPEED_MAX), settle_color())) break;
             }
         }
     }
@@ -211,7 +307,7 @@ void effects_update(EffectsSystem *effects, const Tilemap *tm, float dt)
         Vector2 new_pos = Vector2Add(p.position, Vector2Scale(p.velocity, dt));
         p.velocity = Vector2Scale(p.velocity, drag);
 
-        // Wall collision: check the center of the pixel's new position.
+        // Wall collision: check the pixel centre in the new position.
         bool wall_hit = false;
         if (tm)
         {
@@ -224,13 +320,14 @@ void effects_update(EffectsSystem *effects, const Tilemap *tm, float dt)
         if (!wall_hit)
             p.position = new_pos;
 
-        // Settle if slow enough, hit a wall, or exceeded safety lifetime.
+        if (wall_hit && p.is_spear)
+            spawn_wall_smear(effects, p.position);
+
         float speed_sq = Vector2LengthSqr(p.velocity);
         if (speed_sq < SETTLE_SPEED * SETTLE_SPEED || wall_hit || p.age >= p.max_lifetime)
             settle_pixel(effects, p);
     }
 
-    // Move settled pixels to stains; erase from active list.
     effects->pixels.erase(
         std::remove_if(effects->pixels.begin(), effects->pixels.end(),
                        [](const BloodPixel& p) { return p.settled; }),
@@ -253,6 +350,7 @@ void effects_clear(EffectsSystem *effects)
 {
     effects->pixels.clear();
     effects->stains.clear();
+    s_fountains.clear();
     s_ooze_sources.clear();
 }
 
