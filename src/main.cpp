@@ -46,7 +46,7 @@ int main(void)
             EndMode2D();
 
 #ifdef DEV_MODE
-            debug_draw_ui(&debug, screenWidth, screenHeight);
+            debug_draw_ui(&debug, &state, screenWidth, screenHeight);
 #endif
         EndDrawing();
     }

@@ -65,7 +65,7 @@ void gameplay_update(GameState *state, float dt, int screen_w, int screen_h, boo
     player_update(&state->player, &state->tilemap, dt, mouse_world, &triggers, input_blocked);
     bullets_update(&state->bullets, dt);
     collision_bullets_vs_enemies(&state->bullets, &state->enemies, &state->effects);
-    effects_update(&state->effects, dt);
+    effects_update(&state->effects, &state->tilemap, dt);
     enemies_update(&state->enemies, dt);
     camera_update(&state->camera, player_center(&state->player), &state->tilemap, screen_w, screen_h, dt);
 
@@ -89,7 +89,7 @@ void gameplay_draw_world(GameState *state)
     enemies_draw(&state->enemies);
     player_draw(&state->player);
     bullets_draw(&state->bullets);
-    effects_draw_particles(&state->effects);
+    effects_draw_pixels(&state->effects);
     tilemap_draw_layers_prefixed(&state->tilemap, "foreground");
     player_draw_crosshair(&state->player);
 }

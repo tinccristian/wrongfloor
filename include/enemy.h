@@ -4,13 +4,15 @@
 #include "tilemap.h"
 #include <vector>
 
-// Circle radius used for bullet-vs-enemy hit detection.
-inline constexpr float ENEMY_RADIUS = 16.0f;
+// Rectangular collision box dimensions, centred on enemy.position.
+// Generous by design (Hotline Miami-style) — shots that look like hits, are hits.
+inline constexpr float ENEMY_HITBOX_W = 40.0f;
+inline constexpr float ENEMY_HITBOX_H = 60.0f;
 
 struct Enemy {
-    Vector2 position{};      // world-space center (matches Tiled point object position)
-    bool    alive      = true;
-    int     sprite_row = 0;  // idle sheet row (0=front … 4=back)
+    Vector2 position{};       // world-space center (matches Tiled point object position)
+    bool    alive       = true;
+    int     sprite_row  = 0;  // idle sheet row (0=front … 4=back)
     bool    sprite_flip = false;
 };
 
@@ -18,6 +20,9 @@ struct EnemyManager {
     Texture2D          sprite_sheet{};  // shared by all enemies; swap for a real sprite later
     std::vector<Enemy> enemies;
 };
+
+// Returns the axis-aligned collision rectangle for an enemy, centred on enemy.position.
+Rectangle enemy_hitbox_rect(const Enemy *enemy);
 
 // Load the enemy sprite sheet. Call once after InitWindow.
 void enemies_init(EnemyManager *em);

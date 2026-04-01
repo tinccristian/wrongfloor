@@ -1,40 +1,50 @@
 #pragma once
 
 #include "raylib.h"
+#include "tilemap.h"
 #include <vector>
 
-struct BloodParticle {
+// A single blood pixel in flight. Settles when speed drops below threshold or hits a wall.
+struct BloodPixel {
     Vector2 position{};
     Vector2 velocity{};
-    float   lifetime = 0.5f;
-    float   age      = 0.0f;
-    float   size     = 4.0f;  // starting radius in pixels
+    float   age          = 0.0f;
+    float   max_lifetime = 2.0f; // safety cap; pixels normally settle via speed long before this
+    int     size         = 1;    // world-space pixel edge length (1, 2, or 3)
     Color   color{};
+    bool    settled      = false;
 };
 
-struct BloodStain {
+// A permanent blood mark left on the ground. Never updated — draw only.
+struct SettledPixel {
     Vector2 position{};
-    float   radius = 3.0f;
+    int     size = 1;
     Color   color{};
 };
 
 struct EffectsSystem {
-    std::vector<BloodParticle> particles;
-    std::vector<BloodStain>    stains;   // persist for the remainder of the level
+    std::vector<BloodPixel>   pixels;   // in-flight; updated every frame
+    std::vector<SettledPixel> stains;   // permanent; accumulated for the level duration
 };
 
-// Spawn a blood burst at position, biased in bullet_direction (normalised or zero).
-// Creates both transient particles and persistent stains.
+// Spawn a blood burst at position, biased strongly in bullet_direction.
+// Spawns splatter pixels (immediate fast burst) and registers ooze sources
+// (slow trickle for ~1-2 s afterward that pools into a stain).
 void effects_spawn_blood(EffectsSystem *effects, Vector2 position, Vector2 bullet_direction);
 
-// Advance particle simulation and remove expired particles.
-void effects_update(EffectsSystem *effects, float dt);
+// Advance pixel physics, handle wall settling (via tilemap collision),
+// and emit from active ooze sources. Settled pixels are transferred to stains.
+void effects_update(EffectsSystem *effects, const Tilemap *tm, float dt);
 
-// Draw persistent blood stains. Call before entities (after midground tiles).
+// Draw permanent blood stains. Call before entities (after midground tiles).
 void effects_draw_stains(const EffectsSystem *effects);
 
-// Draw active particles. Call after entities (before foreground tiles).
-void effects_draw_particles(const EffectsSystem *effects);
+// Draw in-flight blood pixels. Call after entities (before foreground tiles).
+void effects_draw_pixels(const EffectsSystem *effects);
 
-// Remove all particles and stains. Call on level transition.
+// Remove all pixels, stains, and ooze sources. Call on level transition.
 void effects_clear(EffectsSystem *effects);
+
+// Active in-flight pixel count and total settled stain count (for debug display).
+int effects_active_count(const EffectsSystem *effects);
+int effects_stain_count(const EffectsSystem *effects);

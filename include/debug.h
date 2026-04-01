@@ -39,6 +39,7 @@ struct DebugState {
     bool show_fps              = false;
     bool show_enemy_colliders  = false;
     bool show_bullet_colliders = false;
+    bool show_blood_count      = false;
 
     // ── Command registry ──────────────────────────────────────────────
     std::map<std::string, DebugCommand> commands;
@@ -58,7 +59,8 @@ void debug_register_command(DebugState *d, const std::string& name,
 // Draw world-space debug overlays. Call inside BeginMode2D.
 void debug_draw_world(const DebugState *d, const GameState *state);
 
-// Draw the console UI. Call outside BeginMode2D, last in the frame.
-void debug_draw_ui(DebugState *d, int screen_w, int screen_h);
+// Draw the console UI and any screen-space overlays (FPS, blood count).
+// Call outside BeginMode2D, last in the frame.
+void debug_draw_ui(DebugState *d, const GameState *state, int screen_w, int screen_h);
 
 #endif // DEV_MODE

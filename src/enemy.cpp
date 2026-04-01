@@ -88,6 +88,16 @@ void enemies_draw(const EnemyManager *em)
     }
 }
 
+Rectangle enemy_hitbox_rect(const Enemy *enemy)
+{
+    return Rectangle{
+        enemy->position.x - ENEMY_HITBOX_W * 0.5f,
+        enemy->position.y - ENEMY_HITBOX_H * 0.5f,
+        ENEMY_HITBOX_W,
+        ENEMY_HITBOX_H
+    };
+}
+
 void enemies_cleanup(EnemyManager *em)
 {
     if (em->sprite_sheet.id != 0) UnloadTexture(em->sprite_sheet);

@@ -12,8 +12,8 @@ void collision_bullets_vs_enemies(BulletSystem *bullets, EnemyManager *enemies,
         {
             if (!enemy.alive) continue;
 
-            float dist_sq = Vector2DistanceSqr(bullet.position, enemy.position);
-            if (dist_sq < ENEMY_RADIUS * ENEMY_RADIUS)
+            // Point-in-rect: bullet position vs. generous enemy rectangle.
+            if (CheckCollisionPointRec(bullet.position, enemy_hitbox_rect(&enemy)))
             {
                 enemy.alive = false;
                 bullet.dead = true;

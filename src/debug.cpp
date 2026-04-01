@@ -138,6 +138,12 @@ void debug_init(DebugState *d)
             ds->show_bullet_colliders = !ds->show_bullet_colliders;
             push_output(ds, std::string("showBulletColliders: ") + (ds->show_bullet_colliders ? "ON" : "OFF"));
         });
+
+    debug_register_command(d, "showBloodCount", "Toggle active/settled blood pixel count display",
+        [](DebugState *ds) {
+            ds->show_blood_count = !ds->show_blood_count;
+            push_output(ds, std::string("showBloodCount: ") + (ds->show_blood_count ? "ON" : "OFF"));
+        });
 }
 
 bool debug_update(DebugState *d, float dt)
@@ -286,39 +292,62 @@ void debug_draw_world(const DebugState *d, const GameState *state)
         DrawText(line_aim,   (int)tx, (int)ty + lh * 2, fs, WHITE);
     }
 
-    // ── Enemy collision radii ─────────────────────────────────────────
+    // ── Enemy collision rectangles ────────────────────────────────────
     if (d->show_enemy_colliders)
     {
         for (const auto &enemy : state->enemies.enemies)
         {
             if (!enemy.alive) continue;
-            DrawCircleV(enemy.position, ENEMY_RADIUS, Color{255, 50, 50, 55});
-            DrawCircleLinesV(enemy.position, ENEMY_RADIUS, Color{255, 80, 80, 200});
+            Rectangle hb = enemy_hitbox_rect(&enemy);
+            DrawRectangleRec(hb, Color{255, 50, 50, 50});
+            DrawRectangleLinesEx(hb, 1.5f, Color{255, 80, 80, 210});
         }
     }
 
-    // ── Bullet collision radii ────────────────────────────────────────
+    // ── Bullet positions ──────────────────────────────────────────────
+    // Bullets use point collision (CheckCollisionPointRec), so draw a small
+    // crosshair to show the exact point being tested.
     if (d->show_bullet_colliders)
     {
+        static constexpr float BULLET_DEBUG_R = 3.0f;
         for (const auto &bullet : state->bullets.bullets)
         {
             if (bullet.dead) continue;
-            DrawCircleV(bullet.position, ENEMY_RADIUS * 0.4f, Color{255, 255, 50, 80});
-            DrawCircleLinesV(bullet.position, ENEMY_RADIUS * 0.4f, Color{255, 230, 60, 220});
+            DrawCircleV(bullet.position, BULLET_DEBUG_R, Color{255, 255, 50, 180});
+            DrawLineV({ bullet.position.x - BULLET_DEBUG_R * 2, bullet.position.y },
+                      { bullet.position.x + BULLET_DEBUG_R * 2, bullet.position.y },
+                      Color{255, 230, 60, 255});
+            DrawLineV({ bullet.position.x, bullet.position.y - BULLET_DEBUG_R * 2 },
+                      { bullet.position.x, bullet.position.y + BULLET_DEBUG_R * 2 },
+                      Color{255, 230, 60, 255});
         }
     }
 }
 
 // ── Draw console UI ───────────────────────────────────────────────────────────
 
-void debug_draw_ui(DebugState *d, int screen_w, int screen_h)
+void debug_draw_ui(DebugState *d, const GameState *state, int screen_w, int screen_h)
 {
+    int hud_y = 8;
+
     if (d->show_fps)
     {
         const char *fps_text = TextFormat("FPS: %d", GetFPS());
-        DrawText(fps_text, 9, 9, FONT_SIZE, BLACK);
-        DrawText(fps_text, 8, 8, FONT_SIZE, Color{210, 255, 210, 255});
+        DrawText(fps_text, 9, hud_y + 1, FONT_SIZE, BLACK);
+        DrawText(fps_text, 8, hud_y,     FONT_SIZE, Color{210, 255, 210, 255});
+        hud_y += FONT_SIZE + 4;
     }
+
+    if (d->show_blood_count)
+    {
+        const char *bc_text = TextFormat("blood  active:%d  stains:%d",
+                                         effects_active_count(&state->effects),
+                                         effects_stain_count(&state->effects));
+        DrawText(bc_text, 9, hud_y + 1, FONT_SIZE, BLACK);
+        DrawText(bc_text, 8, hud_y,     FONT_SIZE, Color{255, 100, 100, 255});
+        hud_y += FONT_SIZE + 4;
+    }
+    (void)hud_y;
 
     if (!d->console_open) return;
 
