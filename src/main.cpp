@@ -41,8 +41,8 @@ int main(void)
         PlayerState ps = state.player.state;
 
         // Play on trigger
-        if (triggers.footstep_walk) audio_play_sfx(&state.audio, state.audio.snd_walk);
-        if (triggers.footstep_run)  audio_play_sfx(&state.audio, state.audio.snd_run);
+        if (triggers.footstep_walk) audio_play_footstep(&state.audio, state.audio.snd_walk);
+        if (triggers.footstep_run)  audio_play_footstep(&state.audio, state.audio.snd_run);
         if (triggers.landed)        audio_play_sfx(&state.audio, state.audio.snd_land);
         if (triggers.attacked)      audio_play_sfx_pitched(&state.audio, state.audio.snd_attack, 0.85f, 1.15f);
 

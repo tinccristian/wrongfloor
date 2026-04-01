@@ -43,6 +43,13 @@ void audio_play_sfx(AudioState *a, Sound &snd)
     PlaySound(snd);
 }
 
+void audio_play_footstep(AudioState *a, Sound &snd)
+{
+    StopSound(snd);
+    SetSoundVolume(snd, effective(a));
+    PlaySound(snd);
+}
+
 void audio_play_sfx_pitched(AudioState *a, Sound &snd, float pitch_min, float pitch_max)
 {
     StopSound(snd); // stop any lingering instance before re-pitching

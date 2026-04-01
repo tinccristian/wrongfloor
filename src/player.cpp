@@ -160,6 +160,8 @@ void player_update(Player *player, const Tilemap *tm, float dt, PlayerSoundTrigg
 {
     *triggers = PlayerSoundTriggers{};
 
+    PlayerState state_before = player->state;
+
     bool was_in_air = (player->state == PLAYER_JUMPING ||
                        player->state == PLAYER_PEAK    ||
                        player->state == PLAYER_FALLING);
@@ -344,6 +346,16 @@ void player_update(Player *player, const Tilemap *tm, float dt, PlayerSoundTrigg
             default: break;
         }
     }
+
+    // ── Fire footstep immediately on state entry ──────────────────────
+    // Avoids the first-frame delay caused by waiting for a frame transition.
+    if (player->state != state_before)
+    {
+        if (player->state == PLAYER_WALKING) triggers->footstep_walk = true;
+        if (player->state == PLAYER_RUNNING) triggers->footstep_run  = true;
+    }
+
+    player->prev_state = state_before;
 
     // ── Flip sprite ───────────────────────────────────────────────────
     if (dir_x < 0.0f) player->anim_player.flip_h = true;

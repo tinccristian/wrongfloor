@@ -44,6 +44,7 @@ struct Player {
     float       jump_buffer_timer;
     bool        double_jumped;  // true after the air jump has been used
     PlayerState state;
+    PlayerState prev_state      = PLAYER_IDLE;
     int         prev_anim_frame = -1; // previous frame index, for footstep detection
 
     Texture2D       spritesheet;

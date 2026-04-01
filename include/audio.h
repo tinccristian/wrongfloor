@@ -31,6 +31,10 @@ float audio_get_music_volume(const AudioState *a);
 // Skips if the sound is already playing (prevents rapid-fire overlap).
 void audio_play_sfx(AudioState *a, Sound &snd);
 
+// Play a footstep sound: always restarts from the beginning on each footstep frame.
+// Use this instead of audio_play_sfx for walk/run footsteps.
+void audio_play_footstep(AudioState *a, Sound &snd);
+
 // Same but randomises pitch in [pitch_min, pitch_max] first.
 // Always plays (does not skip if already playing) — suitable for one-shot events.
 void audio_play_sfx_pitched(AudioState *a, Sound &snd, float pitch_min, float pitch_max);

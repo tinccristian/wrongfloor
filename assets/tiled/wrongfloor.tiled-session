@@ -1,0 +1,53 @@
+{
+    "activeFile": "",
+    "expandedProjectPaths": [
+    ],
+    "fileStates": {
+        "D:/dev/gitHub/wrongfloor/assets/level_01.tmj": {
+            "expandedObjectLayers": [
+                7
+            ],
+            "scale": 0.75,
+            "selectedLayer": 2,
+            "viewCenter": {
+                "x": 640.6666666666665,
+                "y": 436
+            }
+        },
+        "map.tmx": {
+            "expandedObjectLayers": [
+                7
+            ],
+            "scale": 1,
+            "selectedLayer": -1,
+            "viewCenter": {
+                "x": 668.5,
+                "y": 345
+            }
+        },
+        "map1.tmx": {
+            "expandedObjectLayers": [
+                4
+            ],
+            "scale": 1.3396484375,
+            "selectedLayer": 3,
+            "viewCenter": {
+                "x": 401.224668318997,
+                "y": 233.64338824901589
+            }
+        }
+    },
+    "last.exportedFilePath": "D:/dev/gitHub/wrongfloor/assets",
+    "last.imagePath": "D:/dev/gitHub/wrongfloor/assets",
+    "map.height": 23,
+    "map.lastUsedExportFilter": "JSON map files (*.tmj *.json)",
+    "map.lastUsedFormat": "json",
+    "map.width": 40,
+    "openFiles": [
+    ],
+    "project": "wrongfloor.tiled-project",
+    "recentFiles": [
+        "D:/dev/gitHub/wrongfloor/assets/level_01.tmj"
+    ],
+    "tileset.lastUsedFormat": "tsx"
+}
