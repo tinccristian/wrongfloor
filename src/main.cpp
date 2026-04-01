@@ -1,6 +1,19 @@
 #include "raylib.h"
 #include "game.h"
 
+static void load_level(GameState *gs, int index, int screen_w, int screen_h)
+{
+    tilemap_unload(&gs->tilemap);
+    tilemap_load(&gs->tilemap, LEVELS[index]);
+
+    Vector2 spawn = tilemap_get_spawn_point(&gs->tilemap);
+    player_init(&gs->player, spawn);
+
+    Vector2 centre = player_center(&gs->player);
+    camera_init(&gs->camera, centre, screen_w, screen_h);
+    gs->current_level = index;
+}
+
 int main(void)
 {
     const int screenWidth  = 1280;
@@ -10,25 +23,52 @@ int main(void)
     SetTargetFPS(60);
 
     GameState state{};
-    player_init(&state.player, Vector2{ screenWidth * 0.5f, screenHeight * 0.5f });
+    load_level(&state, 0, screenWidth, screenHeight);
 
     while (!WindowShouldClose())
     {
         float dt = GetFrameTime();
 
-        // Input + update
-        player_update(&state.player, dt);
+        // ── Update ────────────────────────────────────────────────────
+        player_update(&state.player, &state.tilemap, dt);
 
-        // Draw
+        Vector2 centre = player_center(&state.player);
+        camera_update(&state.camera, centre, &state.tilemap, screenWidth, screenHeight, dt);
+
+        // ── Level transition ──────────────────────────────────────────
+        const TileObject *exit = tilemap_get_object(&state.tilemap, "level_exit");
+        if (exit)
+        {
+            Rectangle exit_rect = { exit->x, exit->y, exit->width, exit->height };
+            Rectangle player_rect = {
+                state.player.position.x + HITBOX_OFFSET_X,
+                state.player.position.y + HITBOX_OFFSET_Y,
+                HITBOX_W, HITBOX_H
+            };
+            if (CheckCollisionRecs(player_rect, exit_rect))
+            {
+                int next = (state.current_level + 1) % LEVEL_COUNT;
+                player_cleanup(&state.player);
+                load_level(&state, next, screenWidth, screenHeight);
+            }
+        }
+
+        // ── Draw ──────────────────────────────────────────────────────
         BeginDrawing();
-            ClearBackground(Color{185, 188, 192, 255});
-            player_draw(&state.player);
-            if constexpr (DEBUG_GROUND)
-                DrawLineEx(Vector2{0.0f, GROUND_Y}, Vector2{(float)screenWidth, GROUND_Y}, 3.0f, Color{90, 90, 90, 220});
+            ClearBackground(Color{30, 28, 36, 255});
+
+            BeginMode2D(state.camera.cam);
+                tilemap_draw_layer(&state.tilemap, "background");
+                tilemap_draw_layer(&state.tilemap, "midground");
+                player_draw(&state.player);
+                tilemap_draw_layer(&state.tilemap, "foreground");
+            EndMode2D();
+
         EndDrawing();
     }
 
     player_cleanup(&state.player);
+    tilemap_unload(&state.tilemap);
     CloseWindow();
     return 0;
 }

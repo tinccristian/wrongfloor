@@ -17,6 +17,19 @@ FetchContent_Declare(
 
 FetchContent_MakeAvailable(raylib)
 
+# ── nlohmann/json (header-only, for .tmj parsing) ────────
+set(JSON_BuildTests OFF CACHE INTERNAL "")
+set(JSON_Install    OFF CACHE INTERNAL "")
+
+FetchContent_Declare(
+    nlohmann_json
+    GIT_REPOSITORY https://github.com/nlohmann/json.git
+    GIT_TAG        v3.11.3
+    GIT_SHALLOW    TRUE
+)
+
+FetchContent_MakeAvailable(nlohmann_json)
+
 # ── Sources ──────────────────────────────────────────────
 file(GLOB_RECURSE SOURCES CONFIGURE_DEPENDS
     ${CMAKE_SOURCE_DIR}/src/*.cpp
@@ -29,7 +42,7 @@ target_include_directories(${PROJECT_NAME} PRIVATE
     ${CMAKE_SOURCE_DIR}/include
 )
 
-target_link_libraries(${PROJECT_NAME} PRIVATE raylib)
+target_link_libraries(${PROJECT_NAME} PRIVATE raylib nlohmann_json::nlohmann_json)
 
 # ── Copy assets next to binary ───────────────────────────
 add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
