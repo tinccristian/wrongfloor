@@ -1,4 +1,5 @@
 #include "player.h"
+#include "game.h"
 #include <cmath>
 
 static constexpr int   GAMEPAD_ID            = 0;
@@ -49,7 +50,7 @@ void player_init(Player *player, Vector2 start_pos)
     player->double_jumped     = false;
     player->state             = PLAYER_FALLING;
 
-    player->spritesheet = LoadTexture("assets/character.png");
+    player->spritesheet = LoadTexture(assets_path("character.png").c_str());
     Texture2D *tex = &player->spritesheet;
 
     player->anim_idle.texture        = tex;

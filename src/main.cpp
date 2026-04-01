@@ -8,7 +8,7 @@
 static void load_level(GameState *gs, int index, int screen_w, int screen_h)
 {
     tilemap_unload(&gs->tilemap);
-    tilemap_load(&gs->tilemap, LEVELS[index]);
+    tilemap_load(&gs->tilemap, assets_path(LEVELS[index]));
 
     Vector2 spawn = tilemap_get_spawn_point(&gs->tilemap);
     player_init(&gs->player, spawn);

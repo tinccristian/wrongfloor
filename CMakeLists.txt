@@ -48,11 +48,16 @@ target_link_libraries(${PROJECT_NAME} PRIVATE raylib nlohmann_json::nlohmann_jso
 target_compile_definitions(${PROJECT_NAME} PRIVATE
     $<$<CONFIG:Debug>:DEV_MODE>
     $<$<CONFIG:>:DEV_MODE>
+    # In dev builds, load assets directly from source so edits are instant.
+    $<$<CONFIG:Debug>:ASSETS_PATH="${CMAKE_SOURCE_DIR}/assets/">
+    $<$<CONFIG:>:ASSETS_PATH="${CMAKE_SOURCE_DIR}/assets/">
 )
 
-# ── Copy assets next to binary ───────────────────────────
-add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
+# ── Copy assets next to binary (runs every build, not just when exe changes) ──
+add_custom_target(copy_assets ALL
     COMMAND ${CMAKE_COMMAND} -E copy_directory
         ${CMAKE_SOURCE_DIR}/assets
         $<TARGET_FILE_DIR:${PROJECT_NAME}>/assets
+    COMMENT "Copying assets to build directory"
 )
+add_dependencies(${PROJECT_NAME} copy_assets)

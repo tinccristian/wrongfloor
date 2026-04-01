@@ -1,4 +1,5 @@
 #include "audio.h"
+#include "game.h"
 #include <algorithm>
 #include <cstdlib>
 
@@ -14,10 +15,10 @@ static float randf(float lo, float hi)
 void audio_init(AudioState *a)
 {
     InitAudioDevice();
-    a->snd_walk   = LoadSound("assets/sounds/walk.mp3");
-    a->snd_run    = LoadSound("assets/sounds/run.mp3");
-    a->snd_land   = LoadSound("assets/sounds/land.mp3");
-    a->snd_attack = LoadSound("assets/sounds/attack.mp3");
+    a->snd_walk   = LoadSound(assets_path("sounds/walk.mp3").c_str());
+    a->snd_run    = LoadSound(assets_path("sounds/run.mp3").c_str());
+    a->snd_land   = LoadSound(assets_path("sounds/land.mp3").c_str());
+    a->snd_attack = LoadSound(assets_path("sounds/attack.mp3").c_str());
 }
 
 void audio_cleanup(AudioState *a)

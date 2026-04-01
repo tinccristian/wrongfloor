@@ -6,6 +6,17 @@
 #include "audio.h"
 #include <string>
 
+// Returns the base asset directory: the source folder in dev builds (instant
+// iteration), or the build-adjacent "assets/" folder in release builds.
+inline std::string assets_path(const std::string& rel)
+{
+#ifdef ASSETS_PATH
+    return std::string(ASSETS_PATH) + rel;
+#else
+    return std::string("assets/") + rel;
+#endif
+}
+
 struct GameState {
     Player     player;
     Tilemap    tilemap;
@@ -16,6 +27,6 @@ struct GameState {
     int current_level = 0;
 };
 
-// Level file paths
-inline const char* LEVELS[] = { "assets/level_01.tmj", "assets/level_02.tmj" };
+// Level file names (relative to assets root — prepend via assets_path())
+inline const char* LEVELS[] = { "level_01.tmj", "level_02.tmj" };
 inline constexpr int LEVEL_COUNT = 2;

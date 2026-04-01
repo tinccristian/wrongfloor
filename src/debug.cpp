@@ -3,6 +3,7 @@
 #include "debug.h"
 #include <algorithm>
 #include <cstdio>
+#include <cctype>
 
 static constexpr int   MAX_OUTPUT_LINES = 200;
 static constexpr int   MAX_INPUT_LEN    = 256;
@@ -35,14 +36,25 @@ static void push_output(DebugState *d, const std::string& line)
         d->output.pop_front();
 }
 
+static std::string to_lower(const std::string& s)
+{
+    std::string r = s;
+    for (char &c : r) c = (char)std::tolower((unsigned char)c);
+    return r;
+}
+
 static void rebuild_tab_matches(DebugState *d)
 {
     d->tab_matches.clear();
     d->tab_index = -1;
+    std::string prefix_lower = to_lower(d->input);
     for (auto &[name, _] : d->commands)
-        if (!d->input.empty() && name.rfind(d->input, 0) == 0)
-            d->tab_matches.push_back(name);
-    std::sort(d->tab_matches.begin(), d->tab_matches.end());
+        if (!d->input.empty() && to_lower(name).rfind(prefix_lower, 0) == 0)
+            d->tab_matches.push_back(name); // store original casing
+    std::sort(d->tab_matches.begin(), d->tab_matches.end(),
+              [](const std::string &a, const std::string &b) {
+                  return to_lower(a) < to_lower(b);
+              });
 }
 
 static void execute(DebugState *d, const std::string& raw)
@@ -56,11 +68,17 @@ static void execute(DebugState *d, const std::string& raw)
 
     push_output(d, "> " + cmd);
 
-    auto it = d->commands.find(cmd);
-    if (it != d->commands.end())
-        it->second.callback(d);
-    else
-        push_output(d, "Unknown command: " + cmd + ". Type 'help' for a list.");
+    // Case-insensitive lookup: find the command whose lowercased name matches
+    std::string cmd_lower = to_lower(cmd);
+    for (auto &[name, entry] : d->commands)
+    {
+        if (to_lower(name) == cmd_lower)
+        {
+            entry.callback(d);
+            return;
+        }
+    }
+    push_output(d, "Unknown command: " + cmd + ". Type 'help' for a list.");
 }
 
 // ── Public API ────────────────────────────────────────────────────────────────
@@ -73,6 +91,12 @@ void debug_register_command(DebugState *d, const std::string& name,
 
 void debug_init(DebugState *d)
 {
+    // Disable raylib's default Escape-to-quit so Escape can close the console instead.
+    SetExitKey(0);
+
+    debug_register_command(d, "quit", "Quit the game",
+        [](DebugState *) { CloseWindow(); });
+
     debug_register_command(d, "help", "List all available commands",
         [](DebugState *ds) {
             push_output(ds, "Available commands:");
@@ -100,8 +124,6 @@ void debug_init(DebugState *d)
             ds->show_player_collider = !ds->show_player_collider;
             push_output(ds, std::string("showPlayerCollider: ") + (ds->show_player_collider ? "ON" : "OFF"));
         });
-
-    push_output(d, "DEV_MODE active. Type 'help' for commands.");
 }
 
 bool debug_update(DebugState *d, float dt)
