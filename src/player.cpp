@@ -17,6 +17,9 @@ static constexpr float ATTACK_ORIGIN_OFFSET   = 20.0f;
 static constexpr float PI_F                   = 3.14159265f;
 static constexpr float ATTACK_DRAW_PADDING_X  = 16.0f;
 static constexpr float ATTACK_DRAW_PADDING_Y  = 18.0f;
+// Normalised Y position within the render target used as the shader squeeze anchor.
+// 0.82 sits at approximately the player's waist — empirically tuned.
+static constexpr float ATTACK_SHADER_ANCHOR_Y = 0.82f;
 static constexpr int   FRAME_W               = 16;
 static constexpr int   FRAME_H               = 32;
 static constexpr int   IDLE_FRAME_COUNT      = 4;
@@ -57,6 +60,13 @@ struct DirectionRowSelection {
     bool flip_h = false;
 };
 
+struct PlayerInputFrame {
+    Vector2 move_input = { 0.0f, 0.0f };
+    Vector2 controller_aim_input = { 0.0f, 0.0f };
+    Vector2 mouse_screen = { 0.0f, 0.0f };
+    bool attack_pressed = false;
+};
+
 static inline int to_tile(float px) { return (int)floorf(px / (float)TILE_SIZE); }
 
 static Rectangle frame_rect(int col, int row)
@@ -81,7 +91,7 @@ static void init_animation(Animation *anim, Texture2D *texture, int row, int fra
         anim->frames[i] = frame_rect(i, row);
 }
 
-static Rectangle player_hitbox(const Player *player)
+Rectangle player_hitbox_rect(const Player *player)
 {
     return Rectangle{
         player->position.x + HITBOX_OFFSET_X,
@@ -122,9 +132,9 @@ static bool has_meaningful_controller_aim(Vector2 stick_input)
 
 static float attack_effect_strength(const Player *player)
 {
-    if (!player->attacking || ATTACK_DURATION <= 0.0f) return 0.0f;
+    if (!player->attack.active || ATTACK_DURATION <= 0.0f) return 0.0f;
 
-    float progress = 1.0f - (player->attack_timer / ATTACK_DURATION);
+    float progress = 1.0f - (player->attack.timer / ATTACK_DURATION);
     progress = std::clamp(progress, 0.0f, 1.0f);
     return sinf(progress * PI_F) * 0.85f;
 }
@@ -196,25 +206,125 @@ static bool animation_in_set(const Animation *anim, Animation animations[], int 
 
 static void set_directional_animation(Player *player, const Animation *next_animation)
 {
-    if (player->anim_player.current == next_animation)
+    if (player->render.anim_player.current == next_animation)
         return;
 
-    const Animation *current = player->anim_player.current;
-    int preserved_frame = player->anim_player.frame_index;
-    float preserved_elapsed = player->anim_player.elapsed;
+    const Animation *current = player->render.anim_player.current;
+    int preserved_frame = player->render.anim_player.frame_index;
+    float preserved_elapsed = player->render.anim_player.elapsed;
     bool keep_progress =
-        (animation_in_set(current, player->anim_idle_rows, DIRECTION_ROW_COUNT) &&
-         animation_in_set(next_animation, player->anim_idle_rows, DIRECTION_ROW_COUNT)) ||
-        (animation_in_set(current, player->anim_run_rows, DIRECTION_ROW_COUNT) &&
-         animation_in_set(next_animation, player->anim_run_rows, DIRECTION_ROW_COUNT));
+        (animation_in_set(current, player->render.anim_idle_rows, DIRECTION_ROW_COUNT) &&
+         animation_in_set(next_animation, player->render.anim_idle_rows, DIRECTION_ROW_COUNT)) ||
+        (animation_in_set(current, player->render.anim_run_rows, DIRECTION_ROW_COUNT) &&
+         animation_in_set(next_animation, player->render.anim_run_rows, DIRECTION_ROW_COUNT));
 
-    animation_player_set(&player->anim_player, next_animation);
+    animation_player_set(&player->render.anim_player, next_animation);
 
     if (keep_progress && next_animation->frame_count > 0)
     {
-        player->anim_player.frame_index = std::min(preserved_frame, next_animation->frame_count - 1);
-        player->anim_player.elapsed = preserved_elapsed;
+        player->render.anim_player.frame_index = std::min(preserved_frame, next_animation->frame_count - 1);
+        player->render.anim_player.elapsed = preserved_elapsed;
     }
+}
+
+static PlayerInputFrame sample_player_input(bool input_blocked)
+{
+    PlayerInputFrame input;
+    input.mouse_screen = GetMousePosition();
+    input.attack_pressed = !input_blocked && IsMouseButtonPressed(MOUSE_BUTTON_LEFT);
+
+    if (!input_blocked)
+    {
+        if (IsKeyDown(KEY_A) || IsKeyDown(KEY_LEFT))  input.move_input.x -= 1.0f;
+        if (IsKeyDown(KEY_D) || IsKeyDown(KEY_RIGHT)) input.move_input.x += 1.0f;
+        if (IsKeyDown(KEY_W) || IsKeyDown(KEY_UP))    input.move_input.y -= 1.0f;
+        if (IsKeyDown(KEY_S) || IsKeyDown(KEY_DOWN))  input.move_input.y += 1.0f;
+    }
+
+    if (!input_blocked && IsGamepadAvailable(GAMEPAD_ID))
+    {
+        float move_axis_x = GetGamepadAxisMovement(GAMEPAD_ID, GAMEPAD_AXIS_LEFT_X);
+        float move_axis_y = GetGamepadAxisMovement(GAMEPAD_ID, GAMEPAD_AXIS_LEFT_Y);
+        float aim_axis_x  = GetGamepadAxisMovement(GAMEPAD_ID, GAMEPAD_AXIS_RIGHT_X);
+        float aim_axis_y  = GetGamepadAxisMovement(GAMEPAD_ID, GAMEPAD_AXIS_RIGHT_Y);
+
+        if (fabsf(move_axis_x) > GAMEPAD_MOVE_DEAD_ZONE) input.move_input.x += move_axis_x;
+        if (fabsf(move_axis_y) > GAMEPAD_MOVE_DEAD_ZONE) input.move_input.y += move_axis_y;
+        if (fabsf(aim_axis_x)  > GAMEPAD_AIM_DEAD_ZONE)  input.controller_aim_input.x = aim_axis_x;
+        if (fabsf(aim_axis_y)  > GAMEPAD_AIM_DEAD_ZONE)  input.controller_aim_input.y = aim_axis_y;
+        if (IsGamepadButtonPressed(GAMEPAD_ID, GAMEPAD_BUTTON_RIGHT_FACE_DOWN))
+            input.attack_pressed = true;
+    }
+
+    return input;
+}
+
+static Vector2 clamp_move_input(Vector2 move_input)
+{
+    float input_length = Vector2Length(move_input);
+    if (input_length > 1.0f)
+        move_input = Vector2Scale(move_input, 1.0f / input_length);
+    return move_input;
+}
+
+static void update_player_aim(Player *player, Vector2 aim_target_world, const PlayerInputFrame& input)
+{
+    bool controller_aim_active = has_meaningful_controller_aim(input.controller_aim_input);
+    bool mouse_moved = has_meaningful_mouse_movement(input.mouse_screen,
+                                                     player->aim.last_mouse_screen_position);
+
+    if (controller_aim_active)
+    {
+        player->aim.active_input_mode = AIM_GAMEPAD;
+        player->aim.direction = Vector2Normalize(input.controller_aim_input);
+    }
+    else if (mouse_moved)
+    {
+        player->aim.active_input_mode = AIM_MOUSE_KEYBOARD;
+    }
+
+    if (player->aim.active_input_mode == AIM_MOUSE_KEYBOARD)
+    {
+        Vector2 to_mouse = Vector2Subtract(aim_target_world, player_center(player));
+        if (Vector2LengthSqr(to_mouse) > 0.0001f)
+            player->aim.direction = Vector2Normalize(to_mouse);
+    }
+
+    player->aim.angle_deg = atan2f(player->aim.direction.y, player->aim.direction.x) * RAD2DEG;
+    player->aim.facing_direction = aim_to_facing_direction(player->aim.direction);
+    player->aim.last_mouse_screen_position = input.mouse_screen;
+}
+
+static void update_player_attack(Player *player, float dt, bool attack_pressed,
+                                 PlayerSoundTriggers *triggers)
+{
+    if (attack_pressed && !player->attack.active)
+    {
+        player->attack.active = true;
+        player->attack.timer = ATTACK_DURATION;
+        triggers->attacked = true;
+        triggers->attack_origin = player_attack_origin(player);
+        triggers->attack_direction = player->aim.direction;
+    }
+
+    if (player->attack.active)
+    {
+        player->attack.timer -= dt;
+        if (player->attack.timer <= 0.0f)
+        {
+            player->attack.active = false;
+            player->attack.timer = 0.0f;
+        }
+    }
+}
+
+static void update_player_animation(Player *player, bool moving)
+{
+    DirectionRowSelection direction = facing_to_row_selection(player->aim.facing_direction);
+    const Animation *active_animation =
+        moving ? &player->render.anim_run_rows[direction.row] : &player->render.anim_idle_rows[direction.row];
+    set_directional_animation(player, active_animation);
+    player->render.anim_player.flip_h = direction.flip_h;
 }
 
 static void move_and_collide(Player *player, const Tilemap *tm, Vector2 delta)
@@ -222,7 +332,7 @@ static void move_and_collide(Player *player, const Tilemap *tm, Vector2 delta)
     if (delta.x != 0.0f)
     {
         player->position.x += delta.x;
-        Rectangle hitbox = player_hitbox(player);
+        Rectangle hitbox = player_hitbox_rect(player);
         if (hitbox_hits_solid(tm, hitbox))
         {
             if (delta.x > 0.0f)
@@ -241,7 +351,7 @@ static void move_and_collide(Player *player, const Tilemap *tm, Vector2 delta)
     if (delta.y != 0.0f)
     {
         player->position.y += delta.y;
-        Rectangle hitbox = player_hitbox(player);
+        Rectangle hitbox = player_hitbox_rect(player);
         if (hitbox_hits_solid(tm, hitbox))
         {
             if (delta.y > 0.0f)
@@ -266,34 +376,34 @@ void player_init(Player *player, Vector2 start_pos)
     };
     player->velocity_x    = 0.0f;
     player->velocity_y    = 0.0f;
-    player->aim_direction = { 1.0f, 0.0f };
-    player->aim_angle_deg = 0.0f;
-    player->active_aim_mode = AIM_MOUSE_KEYBOARD;
-    player->last_mouse_screen_position = GetMousePosition();
-    player->facing_direction = FACE_FRONT;
-    player->attacking     = false;
-    player->attack_timer  = 0.0f;
+    player->aim.direction = { 1.0f, 0.0f };
+    player->aim.angle_deg = 0.0f;
+    player->aim.active_input_mode = AIM_MOUSE_KEYBOARD;
+    player->aim.last_mouse_screen_position = GetMousePosition();
+    player->aim.facing_direction = FACE_FRONT;
+    player->attack.active    = false;
+    player->attack.timer     = 0.0f;
     player->state         = PLAYER_IDLE;
     player->prev_state    = PLAYER_IDLE;
     player->prev_anim_frame = -1;
 
-    player->idle_sheet = LoadTexture(assets_path("character/idle.png").c_str());
-    player->run_sheet  = LoadTexture(assets_path("character/run.png").c_str());
+    player->render.idle_sheet = LoadTexture(assets_path("character/idle.png").c_str());
+    player->render.run_sheet  = LoadTexture(assets_path("character/run.png").c_str());
 
     for (int row = 0; row < DIRECTION_ROW_COUNT; ++row)
     {
-        init_animation(&player->anim_idle_rows[row], &player->idle_sheet, row, IDLE_FRAME_COUNT, 0.18f);
-        init_animation(&player->anim_run_rows[row],  &player->run_sheet,  row, RUN_FRAME_COUNT, 0.10f);
+        init_animation(&player->render.anim_idle_rows[row], &player->render.idle_sheet, row, IDLE_FRAME_COUNT, 0.18f);
+        init_animation(&player->render.anim_run_rows[row],  &player->render.run_sheet,  row, RUN_FRAME_COUNT, 0.10f);
     }
 
-    animation_player_set(&player->anim_player, &player->anim_idle_rows[0]);
-    player->anim_player.flip_h = false;
+    animation_player_set(&player->render.anim_player, &player->render.anim_idle_rows[0]);
+    player->render.anim_player.flip_h = false;
 
-    player->attack_render_target = LoadRenderTexture(ATTACK_RT_W, ATTACK_RT_H);
-    SetTextureFilter(player->attack_render_target.texture, TEXTURE_FILTER_POINT);
-    player->attack_shader = LoadShaderFromMemory(nullptr, ATTACK_SHADER_FS);
-    player->attack_shader_strength_loc = GetShaderLocation(player->attack_shader, "effect_strength");
-    player->attack_shader_anchor_loc = GetShaderLocation(player->attack_shader, "anchor_uv");
+    player->render.attack_render_target = LoadRenderTexture(ATTACK_RT_W, ATTACK_RT_H);
+    SetTextureFilter(player->render.attack_render_target.texture, TEXTURE_FILTER_POINT);
+    player->render.attack_shader = LoadShaderFromMemory(nullptr, ATTACK_SHADER_FS);
+    player->render.attack_shader_strength_loc = GetShaderLocation(player->render.attack_shader, "effect_strength");
+    player->render.attack_shader_anchor_loc = GetShaderLocation(player->render.attack_shader, "anchor_uv");
 }
 
 void player_update(Player *player, const Tilemap *tm, float dt,
@@ -301,37 +411,9 @@ void player_update(Player *player, const Tilemap *tm, float dt,
                    bool input_blocked)
 {
     *triggers = PlayerSoundTriggers{};
-
-    Vector2 move_input = { 0.0f, 0.0f };
-    Vector2 controller_aim_input = { 0.0f, 0.0f };
-    Vector2 current_mouse_screen = GetMousePosition();
-    bool attack_pressed = !input_blocked && IsMouseButtonPressed(MOUSE_BUTTON_LEFT);
-
-    if (!input_blocked)
-    {
-        if (IsKeyDown(KEY_A) || IsKeyDown(KEY_LEFT))  move_input.x -= 1.0f;
-        if (IsKeyDown(KEY_D) || IsKeyDown(KEY_RIGHT)) move_input.x += 1.0f;
-        if (IsKeyDown(KEY_W) || IsKeyDown(KEY_UP))    move_input.y -= 1.0f;
-        if (IsKeyDown(KEY_S) || IsKeyDown(KEY_DOWN))  move_input.y += 1.0f;
-    }
-
-    if (!input_blocked && IsGamepadAvailable(GAMEPAD_ID))
-    {
-        float move_axis_x = GetGamepadAxisMovement(GAMEPAD_ID, GAMEPAD_AXIS_LEFT_X);
-        float move_axis_y = GetGamepadAxisMovement(GAMEPAD_ID, GAMEPAD_AXIS_LEFT_Y);
-        float aim_axis_x  = GetGamepadAxisMovement(GAMEPAD_ID, GAMEPAD_AXIS_RIGHT_X);
-        float aim_axis_y  = GetGamepadAxisMovement(GAMEPAD_ID, GAMEPAD_AXIS_RIGHT_Y);
-
-        if (fabsf(move_axis_x) > GAMEPAD_MOVE_DEAD_ZONE) move_input.x += move_axis_x;
-        if (fabsf(move_axis_y) > GAMEPAD_MOVE_DEAD_ZONE) move_input.y += move_axis_y;
-        if (fabsf(aim_axis_x)  > GAMEPAD_AIM_DEAD_ZONE)  controller_aim_input.x = aim_axis_x;
-        if (fabsf(aim_axis_y)  > GAMEPAD_AIM_DEAD_ZONE)  controller_aim_input.y = aim_axis_y;
-        if (IsGamepadButtonPressed(GAMEPAD_ID, GAMEPAD_BUTTON_RIGHT_FACE_DOWN)) attack_pressed = true;
-    }
-
+    PlayerInputFrame input = sample_player_input(input_blocked);
+    Vector2 move_input = clamp_move_input(input.move_input);
     float input_length = Vector2Length(move_input);
-    if (input_length > 1.0f)
-        move_input = Vector2Scale(move_input, 1.0f / input_length);
 
     bool moving = input_length > MOVE_THRESHOLD;
     float speed_scale = std::min(input_length, 1.0f);
@@ -344,68 +426,23 @@ void player_update(Player *player, const Tilemap *tm, float dt,
         player->velocity_y * dt
     });
 
-    bool controller_aim_active = has_meaningful_controller_aim(controller_aim_input);
-    bool mouse_moved = has_meaningful_mouse_movement(current_mouse_screen,
-                                                     player->last_mouse_screen_position);
-
-    if (controller_aim_active)
-    {
-        player->active_aim_mode = AIM_GAMEPAD;
-        player->aim_direction = Vector2Normalize(controller_aim_input);
-    }
-    else if (mouse_moved)
-    {
-        player->active_aim_mode = AIM_MOUSE_KEYBOARD;
-    }
-
-    if (player->active_aim_mode == AIM_MOUSE_KEYBOARD)
-    {
-        Vector2 to_mouse = Vector2Subtract(aim_target_world, player_center(player));
-        if (Vector2LengthSqr(to_mouse) > 0.0001f)
-            player->aim_direction = Vector2Normalize(to_mouse);
-    }
-
-    player->aim_angle_deg = atan2f(player->aim_direction.y, player->aim_direction.x) * RAD2DEG;
-    player->facing_direction = aim_to_facing_direction(player->aim_direction);
-    player->last_mouse_screen_position = current_mouse_screen;
-
-    if (attack_pressed && !player->attacking)
-    {
-        player->attacking = true;
-        player->attack_timer = ATTACK_DURATION;
-        triggers->attacked = true;
-        triggers->attack_origin = player_attack_origin(player);
-        triggers->attack_direction = player->aim_direction;
-    }
-
-    if (player->attacking)
-    {
-        player->attack_timer -= dt;
-        if (player->attack_timer <= 0.0f)
-        {
-            player->attacking = false;
-            player->attack_timer = 0.0f;
-        }
-    }
+    update_player_aim(player, aim_target_world, input);
+    update_player_attack(player, dt, input.attack_pressed, triggers);
 
     PlayerState state_before = player->state;
-    if (player->attacking)
+    if (player->attack.active)
         player->state = PLAYER_ATTACKING;
     else
         player->state = moving ? PLAYER_RUNNING : PLAYER_IDLE;
 
-    DirectionRowSelection direction = facing_to_row_selection(player->facing_direction);
-    const Animation *active_animation =
-        moving ? &player->anim_run_rows[direction.row] : &player->anim_idle_rows[direction.row];
-    set_directional_animation(player, active_animation);
-    player->anim_player.flip_h = direction.flip_h;
+    update_player_animation(player, moving);
 
-    int frame_before = player->anim_player.frame_index;
-    animation_player_update(&player->anim_player, dt);
-    int frame_after = player->anim_player.frame_index;
+    int frame_before = player->render.anim_player.frame_index;
+    animation_player_update(&player->render.anim_player, dt);
+    int frame_after = player->render.anim_player.frame_index;
 
     if (frame_after != frame_before &&
-        animation_in_set(player->anim_player.current, player->anim_run_rows, DIRECTION_ROW_COUNT))
+        animation_in_set(player->render.anim_player.current, player->render.anim_run_rows, DIRECTION_ROW_COUNT))
     {
         if (frame_after == 0 || frame_after == 3)
             triggers->footstep_run = true;
@@ -421,20 +458,20 @@ void player_update(Player *player, const Tilemap *tm, float dt,
 void player_prepare_draw(Player *player)
 {
     bool use_attack_shader =
-        player->attacking &&
-        player->attack_render_target.id != 0 &&
-        player->anim_player.current &&
-        player->anim_player.current->texture;
+        player->attack.active &&
+        player->render.attack_render_target.id != 0 &&
+        player->render.anim_player.current &&
+        player->render.anim_player.current->texture;
 
     if (!use_attack_shader) return;
 
-    Rectangle source = player->anim_player.current->frames[player->anim_player.frame_index];
-    if (player->anim_player.flip_h)
+    Rectangle source = player->render.anim_player.current->frames[player->render.anim_player.frame_index];
+    if (player->render.anim_player.flip_h)
         source.width = -source.width;
 
-    BeginTextureMode(player->attack_render_target);
+    BeginTextureMode(player->render.attack_render_target);
         ClearBackground(BLANK);
-        DrawTexturePro(*player->anim_player.current->texture, source, centered_sprite_rect(),
+        DrawTexturePro(*player->render.anim_player.current->texture, source, centered_sprite_rect(),
                        Vector2{0.0f, 0.0f}, 0.0f, WHITE);
     EndTextureMode();
 }
@@ -442,47 +479,47 @@ void player_prepare_draw(Player *player)
 void player_draw(Player *player)
 {
     bool use_attack_shader =
-        player->attacking &&
-        player->attack_shader.id != 0 &&
-        player->attack_shader_strength_loc >= 0 &&
-        player->attack_shader_anchor_loc >= 0 &&
-        player->attack_render_target.id != 0 &&
-        player->anim_player.current &&
-        player->anim_player.current->texture;
+        player->attack.active &&
+        player->render.attack_shader.id != 0 &&
+        player->render.attack_shader_strength_loc >= 0 &&
+        player->render.attack_shader_anchor_loc >= 0 &&
+        player->render.attack_render_target.id != 0 &&
+        player->render.anim_player.current &&
+        player->render.anim_player.current->texture;
 
     if (use_attack_shader)
     {
         float effect_strength = attack_effect_strength(player);
         float anchor_uv[2] = {
             0.5f,
-            (ATTACK_DRAW_PADDING_Y + SPRITE_H * 0.82f) / (float)ATTACK_RT_H
+            (ATTACK_DRAW_PADDING_Y + SPRITE_H * ATTACK_SHADER_ANCHOR_Y) / (float)ATTACK_RT_H
         };
-        SetShaderValue(player->attack_shader, player->attack_shader_strength_loc,
+        SetShaderValue(player->render.attack_shader, player->render.attack_shader_strength_loc,
                        &effect_strength, SHADER_UNIFORM_FLOAT);
-        SetShaderValue(player->attack_shader, player->attack_shader_anchor_loc,
+        SetShaderValue(player->render.attack_shader, player->render.attack_shader_anchor_loc,
                        anchor_uv, SHADER_UNIFORM_VEC2);
-        BeginShaderMode(player->attack_shader);
-        DrawTexturePro(player->attack_render_target.texture, attack_render_source_rect(),
+        BeginShaderMode(player->render.attack_shader);
+        DrawTexturePro(player->render.attack_render_target.texture, attack_render_source_rect(),
                        attack_draw_rect(player),
                        Vector2{0.0f, 0.0f}, 0.0f, WHITE);
         EndShaderMode();
     }
     else
     {
-        animation_player_draw(&player->anim_player, player->position, SPRITE_SCALE);
+        animation_player_draw(&player->render.anim_player, player->position, SPRITE_SCALE);
     }
 }
 
 Vector2 player_attack_origin(const Player *player)
 {
     return Vector2Add(player_center(player),
-                      Vector2Scale(player->aim_direction, ATTACK_ORIGIN_OFFSET));
+                      Vector2Scale(player->aim.direction, ATTACK_ORIGIN_OFFSET));
 }
 
 Vector2 player_crosshair_position(const Player *player)
 {
     return Vector2Add(player_center(player),
-                      Vector2Scale(player->aim_direction, CROSSHAIR_DISTANCE));
+                      Vector2Scale(player->aim.direction, CROSSHAIR_DISTANCE));
 }
 
 void player_draw_crosshair(const Player *player)
@@ -493,16 +530,16 @@ void player_draw_crosshair(const Player *player)
 
 void player_cleanup(Player *player)
 {
-    if (player->idle_sheet.id != 0) UnloadTexture(player->idle_sheet);
-    if (player->run_sheet.id != 0)  UnloadTexture(player->run_sheet);
-    if (player->attack_render_target.id != 0) UnloadRenderTexture(player->attack_render_target);
-    if (player->attack_shader.id != 0) UnloadShader(player->attack_shader);
-    player->idle_sheet = Texture2D{};
-    player->run_sheet  = Texture2D{};
-    player->attack_render_target = RenderTexture2D{};
-    player->attack_shader = Shader{};
-    player->attack_shader_strength_loc = -1;
-    player->attack_shader_anchor_loc = -1;
+    if (player->render.idle_sheet.id != 0) UnloadTexture(player->render.idle_sheet);
+    if (player->render.run_sheet.id != 0)  UnloadTexture(player->render.run_sheet);
+    if (player->render.attack_render_target.id != 0) UnloadRenderTexture(player->render.attack_render_target);
+    if (player->render.attack_shader.id != 0) UnloadShader(player->render.attack_shader);
+    player->render.idle_sheet = Texture2D{};
+    player->render.run_sheet  = Texture2D{};
+    player->render.attack_render_target = RenderTexture2D{};
+    player->render.attack_shader = Shader{};
+    player->render.attack_shader_strength_loc = -1;
+    player->render.attack_shader_anchor_loc = -1;
 }
 
 Vector2 player_center(const Player *player)

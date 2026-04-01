@@ -8,7 +8,13 @@ static constexpr float BULLET_SPEED = 900.0f;
 static constexpr float BULLET_LIFETIME = 0.9f;
 static constexpr float BULLET_FRAME_DURATION = 0.05f;
 static constexpr float BULLET_SCALE = 2.0f;
-static constexpr float BULLET_GLOW_PULSE_SPEED = 16.0f;
+static constexpr float BULLET_GLOW_PULSE_SPEED   = 16.0f;
+static constexpr float BULLET_INNER_SCALE_BASE   = 1.55f;
+static constexpr float BULLET_INNER_SCALE_PULSE  = 0.12f;
+static constexpr float BULLET_OUTER_SCALE_BASE   = 1.95f;
+static constexpr float BULLET_OUTER_SCALE_PULSE  = 0.18f;
+static constexpr Color BULLET_GLOW_OUTER_COLOR   = { 255, 190,  90,  48 };
+static constexpr Color BULLET_GLOW_INNER_COLOR   = { 255, 235, 160,  88 };
 static constexpr int BULLET_FRAME_SIZE = 16;
 static constexpr int BULLET_FRAME_COUNT = 4;
 
@@ -55,6 +61,12 @@ void bullets_spawn(BulletSystem *system, Vector2 origin, Vector2 direction)
     system->bullets.push_back(bullet);
 }
 
+void bullets_clear(BulletSystem *system)
+{
+    if (!system) return;
+    system->bullets.clear();
+}
+
 void bullets_update(BulletSystem *system, float dt)
 {
     if (!system) return;
@@ -86,12 +98,12 @@ void bullets_draw(const BulletSystem *system)
     {
         Rectangle source = bullet_frame_rect(bullet.frame_index);
         float pulse = 0.5f + 0.5f * sinf(bullet.age * BULLET_GLOW_PULSE_SPEED);
-        float inner_scale = BULLET_SCALE * (1.55f + pulse * 0.12f);
-        float outer_scale = BULLET_SCALE * (1.95f + pulse * 0.18f);
+        float inner_scale = BULLET_SCALE * (BULLET_INNER_SCALE_BASE + pulse * BULLET_INNER_SCALE_PULSE);
+        float outer_scale = BULLET_SCALE * (BULLET_OUTER_SCALE_BASE + pulse * BULLET_OUTER_SCALE_PULSE);
 
         BeginBlendMode(BLEND_ADDITIVE);
-            draw_bullet_pass(system, bullet, source, outer_scale, Color{255, 190, 90, 48});
-            draw_bullet_pass(system, bullet, source, inner_scale, Color{255, 235, 160, 88});
+            draw_bullet_pass(system, bullet, source, outer_scale, BULLET_GLOW_OUTER_COLOR);
+            draw_bullet_pass(system, bullet, source, inner_scale, BULLET_GLOW_INNER_COLOR);
         EndBlendMode();
 
         draw_bullet_pass(system, bullet, source, BULLET_SCALE, WHITE);

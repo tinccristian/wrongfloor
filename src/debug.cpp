@@ -241,11 +241,7 @@ void debug_draw_world(const DebugState *d, const Tilemap *tm, const Player *play
     // ── Player hitbox ─────────────────────────────────────────────────
     if (d->show_player_collider)
     {
-        Rectangle hb = {
-            player->position.x + HITBOX_OFFSET_X,
-            player->position.y + HITBOX_OFFSET_Y,
-            HITBOX_W, HITBOX_H
-        };
+        Rectangle hb = player_hitbox_rect(player);
         DrawRectangleRec(hb, Color{50, 255, 50, 50});
         DrawRectangleLinesEx(hb, 1.5f, Color{80, 255, 80, 220});
     }
@@ -260,12 +256,13 @@ void debug_draw_world(const DebugState *d, const Tilemap *tm, const Player *play
         snprintf(line_state, sizeof(line_state), "%s", player_state_name(player->state));
         snprintf(line_vel,   sizeof(line_vel),   "vel: (%.1f, %.1f)",
                  player->velocity_x, player->velocity_y);
-        snprintf(line_aim,   sizeof(line_aim),   "aim: %.1f deg", player->aim_angle_deg);
+        snprintf(line_aim,   sizeof(line_aim),   "aim: %.1f deg", player->aim.angle_deg);
 
         int fs  = 14;
         int lh  = 16;
-        float tx = player->position.x + HITBOX_OFFSET_X;
-        float ty = player->position.y - 3 * lh - 4.0f;
+        Rectangle hb = player_hitbox_rect(player);
+        float tx = hb.x;
+        float ty = hb.y - 3 * lh - 4.0f;
 
         // Shadow
         DrawText(line_state, (int)tx + 1, (int)ty + 1,         fs, BLACK);

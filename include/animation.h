@@ -32,5 +32,7 @@ void animation_player_update(AnimationPlayer *ap, float dt);
 void animation_player_draw(const AnimationPlayer *ap, Vector2 position, float scale);
 
 // Draw the current frame with a custom rotation origin in destination pixels.
+// NOTE: not called directly by any system currently — animation_player_draw delegates to this.
+// Retained for future use (e.g. spinning projectiles, rotated decals).
 void animation_player_draw_rotated(const AnimationPlayer *ap, Vector2 position, float scale,
                                    float rotation_deg, Vector2 origin);

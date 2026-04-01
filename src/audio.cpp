@@ -4,7 +4,7 @@
 #include <cstdlib>
 
 static float clampf(float v) { return std::clamp(v, 0.0f, 1.0f); }
-static float effective(const AudioState *a) { return a->master_volume * a->sfx_volume; }
+static float sfx_effective_volume(const AudioState *a) { return a->master_volume * a->sfx_volume; }
 
 // Random float in [lo, hi]
 static float randf(float lo, float hi)
@@ -40,14 +40,14 @@ float audio_get_music_volume  (const AudioState *a) { return a->music_volume; }
 void audio_play_sfx(AudioState *a, Sound &snd)
 {
     if (IsSoundPlaying(snd)) return;
-    SetSoundVolume(snd, effective(a));
+    SetSoundVolume(snd, sfx_effective_volume(a));
     PlaySound(snd);
 }
 
 void audio_play_footstep(AudioState *a, Sound &snd)
 {
     StopSound(snd);
-    SetSoundVolume(snd, effective(a));
+    SetSoundVolume(snd, sfx_effective_volume(a));
     PlaySound(snd);
 }
 
@@ -55,6 +55,6 @@ void audio_play_sfx_pitched(AudioState *a, Sound &snd, float pitch_min, float pi
 {
     StopSound(snd); // stop any lingering instance before re-pitching
     SetSoundPitch(snd, randf(pitch_min, pitch_max));
-    SetSoundVolume(snd, effective(a));
+    SetSoundVolume(snd, sfx_effective_volume(a));
     PlaySound(snd);
 }

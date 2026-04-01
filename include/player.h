@@ -18,7 +18,7 @@ inline constexpr float HITBOX_OFFSET_Y = SPRITE_H - HITBOX_H - 8.0f;
 
 enum PlayerState {
     PLAYER_IDLE,
-    PLAYER_WALKING,
+    PLAYER_WALKING, // NOTE: currently unused — state machine only sets IDLE, RUNNING, ATTACKING
     PLAYER_RUNNING,
     PLAYER_ATTACKING
 };
@@ -43,27 +43,29 @@ enum AimInputMode {
 struct PlayerSoundTriggers {
     bool footstep_walk = false; // walk footstep frame crossed
     bool footstep_run  = false; // run footstep frame crossed
-    bool landed        = false; // reserved for future use
+    bool landed        = false; // NOTE: reserved — snd_land exists but is never triggered yet
     bool attacked      = false; // attack fired this frame
     Vector2 attack_origin = {};
     Vector2 attack_direction = { 1.0f, 0.0f };
 };
 
-struct Player {
-    Vector2     position{};      // top-left of the sprite in world space
-    float       velocity_x = 0.0f;
-    float       velocity_y = 0.0f;
-    Vector2     aim_direction = { 1.0f, 0.0f };
-    float       aim_angle_deg = 0.0f;
-    AimInputMode active_aim_mode = AIM_MOUSE_KEYBOARD;
-    Vector2     last_mouse_screen_position{};
+// Runtime state for aim ownership, resolved direction, and facing.
+struct PlayerAimState {
+    Vector2      direction = { 1.0f, 0.0f };
+    float        angle_deg = 0.0f;
+    AimInputMode active_input_mode = AIM_MOUSE_KEYBOARD;
+    Vector2      last_mouse_screen_position{};
     FacingDirection facing_direction = FACE_FRONT;
-    bool        attacking     = false;
-    float       attack_timer  = 0.0f;
-    PlayerState state         = PLAYER_IDLE;
-    PlayerState prev_state    = PLAYER_IDLE;
-    int         prev_anim_frame = -1; // previous frame index, for footstep detection
+};
 
+// Short-lived attack state used for projectile firing and visual feedback.
+struct PlayerAttackState {
+    bool  active = false;
+    float timer = 0.0f;
+};
+
+// Player-owned render resources and animation playback state.
+struct PlayerRenderState {
     Texture2D       idle_sheet{};
     Texture2D       run_sheet{};
     Animation       anim_idle_rows[5]{};
@@ -74,6 +76,19 @@ struct Player {
     Shader          attack_shader{};
     int             attack_shader_strength_loc = -1;
     int             attack_shader_anchor_loc = -1;
+};
+
+struct Player {
+    Vector2     position{};      // top-left of the sprite in world space
+    float       velocity_x = 0.0f;
+    float       velocity_y = 0.0f;
+    PlayerAimState aim{};
+    PlayerAttackState attack{};
+    PlayerState state         = PLAYER_IDLE;
+    PlayerState prev_state    = PLAYER_IDLE;
+    int         prev_anim_frame = -1; // previous frame index, for footstep detection
+
+    PlayerRenderState render{};
 };
 
 // Load top-down directional player animations and place the player at start_pos.
@@ -101,8 +116,14 @@ void player_cleanup(Player *player);
 // Returns the world-space visual centre of the character sprite.
 Vector2 player_center(const Player *player);
 
+// Returns the axis-aligned bounding box used for wall collision and overlap tests.
+Rectangle player_hitbox_rect(const Player *player);
+
 // Returns the world-space point bullets should spawn from.
 Vector2 player_attack_origin(const Player *player);
 
 // Returns the world-space position of the current aim marker.
 Vector2 player_crosshair_position(const Player *player);
+
+// FUTURE: for player-enemy collision, use player_hitbox_rect() against enemy hitboxes.
+// player_center() and player_hitbox_rect() are the two key integration points.
