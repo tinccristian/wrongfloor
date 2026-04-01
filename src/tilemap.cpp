@@ -90,6 +90,19 @@ bool tilemap_load(Tilemap *tm, const std::string& path)
                 to.y      = obj.value("y",      0.0f);
                 to.width  = obj.value("width",  0.0f);
                 to.height = obj.value("height", 0.0f);
+
+                if (obj.contains("properties") && obj["properties"].is_array())
+                {
+                    for (const auto& prop : obj["properties"])
+                    {
+                        if (!prop.contains("name")) continue;
+                        std::string pname = prop["name"].get<std::string>();
+                        // Only store string-typed properties; other types are ignored.
+                        if (prop.contains("value") && prop["value"].is_string())
+                            to.properties[pname] = prop["value"].get<std::string>();
+                    }
+                }
+
                 tm->objects.push_back(std::move(to));
             }
         }

@@ -86,7 +86,7 @@ void bullets_update(BulletSystem *system, float dt)
 
     system->bullets.erase(
         std::remove_if(system->bullets.begin(), system->bullets.end(),
-                       [](const Bullet &bullet) { return bullet.age >= bullet.lifetime; }),
+                       [](const Bullet &bullet) { return bullet.dead || bullet.age >= bullet.lifetime; }),
         system->bullets.end());
 }
 

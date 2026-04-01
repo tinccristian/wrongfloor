@@ -1,6 +1,7 @@
 #pragma once
 
 #include "raylib.h"
+#include <map>
 #include <string>
 #include <vector>
 
@@ -10,6 +11,8 @@ inline constexpr int TILE_SIZE = 32;
 struct TileObject {
     std::string name;
     float x, y, width, height;
+    // Custom properties from Tiled (string-typed only; other types are ignored).
+    std::map<std::string, std::string> properties;
 };
 
 struct TileLayer {

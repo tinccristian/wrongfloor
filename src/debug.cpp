@@ -126,6 +126,18 @@ void debug_init(DebugState *d)
             ds->show_fps = !ds->show_fps;
             push_output(ds, std::string("showFps: ") + (ds->show_fps ? "ON" : "OFF"));
         });
+
+    debug_register_command(d, "showEnemyColliders", "Toggle enemy collision radius overlay",
+        [](DebugState *ds) {
+            ds->show_enemy_colliders = !ds->show_enemy_colliders;
+            push_output(ds, std::string("showEnemyColliders: ") + (ds->show_enemy_colliders ? "ON" : "OFF"));
+        });
+
+    debug_register_command(d, "showBulletColliders", "Toggle bullet collision radius overlay",
+        [](DebugState *ds) {
+            ds->show_bullet_colliders = !ds->show_bullet_colliders;
+            push_output(ds, std::string("showBulletColliders: ") + (ds->show_bullet_colliders ? "ON" : "OFF"));
+        });
 }
 
 bool debug_update(DebugState *d, float dt)
@@ -213,8 +225,11 @@ bool debug_update(DebugState *d, float dt)
 
 // ── Draw world overlays ───────────────────────────────────────────────────────
 
-void debug_draw_world(const DebugState *d, const Tilemap *tm, const Player *player)
+void debug_draw_world(const DebugState *d, const GameState *state)
 {
+    const Tilemap *tm     = &state->tilemap;
+    const Player  *player = &state->player;
+
     // ── Collision layer overlay ───────────────────────────────────────
     if (d->show_colliders && tm)
     {
@@ -236,8 +251,6 @@ void debug_draw_world(const DebugState *d, const Tilemap *tm, const Player *play
         }
     }
 
-    if (!player) return;
-
     // ── Player hitbox ─────────────────────────────────────────────────
     if (d->show_player_collider)
     {
@@ -249,7 +262,6 @@ void debug_draw_world(const DebugState *d, const Tilemap *tm, const Player *play
     // ── Player state text ─────────────────────────────────────────────
     if (d->show_player_state)
     {
-        // Build the three lines
         char line_state[32];
         char line_vel[48];
         char line_aim[32];
@@ -258,20 +270,42 @@ void debug_draw_world(const DebugState *d, const Tilemap *tm, const Player *play
                  player->velocity_x, player->velocity_y);
         snprintf(line_aim,   sizeof(line_aim),   "aim: %.1f deg", player->aim.angle_deg);
 
-        int fs  = 14;
-        int lh  = 16;
+        int fs = 14;
+        int lh = 16;
         Rectangle hb = player_hitbox_rect(player);
         float tx = hb.x;
         float ty = hb.y - 3 * lh - 4.0f;
 
         // Shadow
-        DrawText(line_state, (int)tx + 1, (int)ty + 1,         fs, BLACK);
-        DrawText(line_vel,   (int)tx + 1, (int)ty + lh + 1,    fs, BLACK);
+        DrawText(line_state, (int)tx + 1, (int)ty + 1,          fs, BLACK);
+        DrawText(line_vel,   (int)tx + 1, (int)ty + lh + 1,     fs, BLACK);
         DrawText(line_aim,   (int)tx + 1, (int)ty + lh * 2 + 1, fs, BLACK);
         // Text
-        DrawText(line_state, (int)tx, (int)ty,         fs, WHITE);
-        DrawText(line_vel,   (int)tx, (int)ty + lh,    fs, WHITE);
+        DrawText(line_state, (int)tx, (int)ty,          fs, WHITE);
+        DrawText(line_vel,   (int)tx, (int)ty + lh,     fs, WHITE);
         DrawText(line_aim,   (int)tx, (int)ty + lh * 2, fs, WHITE);
+    }
+
+    // ── Enemy collision radii ─────────────────────────────────────────
+    if (d->show_enemy_colliders)
+    {
+        for (const auto &enemy : state->enemies.enemies)
+        {
+            if (!enemy.alive) continue;
+            DrawCircleV(enemy.position, ENEMY_RADIUS, Color{255, 50, 50, 55});
+            DrawCircleLinesV(enemy.position, ENEMY_RADIUS, Color{255, 80, 80, 200});
+        }
+    }
+
+    // ── Bullet collision radii ────────────────────────────────────────
+    if (d->show_bullet_colliders)
+    {
+        for (const auto &bullet : state->bullets.bullets)
+        {
+            if (bullet.dead) continue;
+            DrawCircleV(bullet.position, ENEMY_RADIUS * 0.4f, Color{255, 255, 50, 80});
+            DrawCircleLinesV(bullet.position, ENEMY_RADIUS * 0.4f, Color{255, 230, 60, 220});
+        }
     }
 }
 

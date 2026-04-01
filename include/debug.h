@@ -3,8 +3,7 @@
 #ifdef DEV_MODE
 
 #include "raylib.h"
-#include "tilemap.h"
-#include "player.h"
+#include "game.h"
 #include <string>
 #include <vector>
 #include <deque>
@@ -34,10 +33,12 @@ struct DebugState {
     std::string last_tab_input; // input at time of last Tab press
 
     // ── Overlay toggles ───────────────────────────────────────────────
-    bool show_colliders      = false;
-    bool show_player_state   = false;
-    bool show_player_collider = false;
-    bool show_fps           = false;
+    bool show_colliders        = false;
+    bool show_player_state     = false;
+    bool show_player_collider  = false;
+    bool show_fps              = false;
+    bool show_enemy_colliders  = false;
+    bool show_bullet_colliders = false;
 
     // ── Command registry ──────────────────────────────────────────────
     std::map<std::string, DebugCommand> commands;
@@ -55,7 +56,7 @@ void debug_register_command(DebugState *d, const std::string& name,
                              const std::string& description, DebugCallback callback);
 
 // Draw world-space debug overlays. Call inside BeginMode2D.
-void debug_draw_world(const DebugState *d, const Tilemap *tm, const Player *player);
+void debug_draw_world(const DebugState *d, const GameState *state);
 
 // Draw the console UI. Call outside BeginMode2D, last in the frame.
 void debug_draw_ui(DebugState *d, int screen_w, int screen_h);

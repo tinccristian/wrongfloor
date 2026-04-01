@@ -5,6 +5,8 @@
 #include "tilemap.h"
 #include "camera.h"
 #include "audio.h"
+#include "enemy.h"
+#include "effects.h"
 #include <string>
 
 // Returns the base asset directory: the source folder in dev builds (instant
@@ -19,11 +21,13 @@ inline std::string assets_path(const std::string& rel)
 }
 
 struct GameState {
-    Player     player;
-    BulletSystem bullets;
-    Tilemap    tilemap;
-    GameCamera camera;
-    AudioState audio;
+    Player        player;
+    BulletSystem  bullets;
+    Tilemap       tilemap;
+    GameCamera    camera;
+    AudioState    audio;
+    EnemyManager  enemies;
+    EffectsSystem effects;
 
     // Level cycling: current level index (0 = level_01, 1 = level_02)
     int current_level = 0;

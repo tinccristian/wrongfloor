@@ -1,4 +1,5 @@
 #include "gameplay.h"
+#include "collision_system.h"
 
 static void load_level(GameState *state, int index, int screen_w, int screen_h)
 {
@@ -8,6 +9,9 @@ static void load_level(GameState *state, int index, int screen_w, int screen_h)
     Vector2 spawn = tilemap_get_spawn_point(&state->tilemap);
     player_init(&state->player, spawn);
     bullets_clear(&state->bullets);
+
+    enemies_load_from_tilemap(&state->enemies, &state->tilemap);
+    effects_clear(&state->effects);
 
     camera_init(&state->camera, player_center(&state->player), screen_w, screen_h);
     state->current_level = index;
@@ -47,6 +51,8 @@ void gameplay_init(GameState *state, int screen_w, int screen_h)
 {
     audio_init(&state->audio);
     bullets_init(&state->bullets);
+    enemies_init(&state->enemies);
+    // EffectsSystem needs no init — its vectors are default-constructed.
     load_level(state, 0, screen_w, screen_h);
 }
 
@@ -55,15 +61,17 @@ void gameplay_update(GameState *state, float dt, int screen_w, int screen_h, boo
     Vector2 mouse_world = GetScreenToWorld2D(GetMousePosition(), state->camera.cam);
     PlayerSoundTriggers triggers;
 
+    // Update order: input/player → projectiles → collision → effects → enemies → camera
     player_update(&state->player, &state->tilemap, dt, mouse_world, &triggers, input_blocked);
-    // FUTURE: enemies_update(&state->enemies, &state->tilemap, dt);
     bullets_update(&state->bullets, dt);
-    // FUTURE: bullets_check_enemy_collisions(&state->bullets, &state->enemies);
+    collision_bullets_vs_enemies(&state->bullets, &state->enemies, &state->effects);
+    effects_update(&state->effects, dt);
+    enemies_update(&state->enemies, dt);
     camera_update(&state->camera, player_center(&state->player), &state->tilemap, screen_w, screen_h, dt);
 
     update_audio(triggers, state);
     update_level_transition(state, screen_w, screen_h);
-    // FUTURE: if game state changes (pause, death, menu), gate the above behind a state check.
+    // FUTURE: gate the above behind an AppState check for pause/menu/game-over.
 }
 
 void gameplay_prepare_draw(GameState *state)
@@ -73,11 +81,15 @@ void gameplay_prepare_draw(GameState *state)
 
 void gameplay_draw_world(GameState *state)
 {
+    // Draw order: background → midground → ground effects → enemies →
+    //             player → projectiles → particles → foreground → crosshair
     tilemap_draw_layers_prefixed(&state->tilemap, "background");
     tilemap_draw_layers_prefixed(&state->tilemap, "midground");
-    // FUTURE: enemies_draw(&state->enemies);
-    bullets_draw(&state->bullets);
+    effects_draw_stains(&state->effects);
+    enemies_draw(&state->enemies);
     player_draw(&state->player);
+    bullets_draw(&state->bullets);
+    effects_draw_particles(&state->effects);
     tilemap_draw_layers_prefixed(&state->tilemap, "foreground");
     player_draw_crosshair(&state->player);
 }
@@ -86,6 +98,8 @@ void gameplay_cleanup(GameState *state)
 {
     player_cleanup(&state->player);
     bullets_cleanup(&state->bullets);
+    enemies_cleanup(&state->enemies);
     tilemap_unload(&state->tilemap);
     audio_cleanup(&state->audio);
+    // EffectsSystem holds no GPU resources — vectors free themselves.
 }

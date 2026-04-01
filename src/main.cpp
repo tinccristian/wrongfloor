@@ -41,7 +41,7 @@ int main(void)
             BeginMode2D(state.camera.cam);
                 gameplay_draw_world(&state);
 #ifdef DEV_MODE
-                debug_draw_world(&debug, &state.tilemap, &state.player);
+                debug_draw_world(&debug, &state);
 #endif
             EndMode2D();
 

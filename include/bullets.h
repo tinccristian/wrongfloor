@@ -10,6 +10,7 @@ struct Bullet {
     float   lifetime = 0.0f;
     float   frame_timer = 0.0f;
     int     frame_index = 0;
+    bool    dead = false; // set by collision system; removed at start of next bullets_update
 };
 
 struct BulletSystem {
