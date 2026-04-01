@@ -26,6 +26,14 @@ enum PlayerState {
     PLAYER_ATTACKING
 };
 
+// Sound events produced by player_update for the caller to act on.
+struct PlayerSoundTriggers {
+    bool footstep_walk = false; // walk footstep frame crossed
+    bool footstep_run  = false; // run footstep frame crossed
+    bool landed        = false; // just touched ground from air
+    bool attacked      = false; // attack just started
+};
+
 struct Player {
     Vector2     position;   // top-left of the 96×96 sprite
     float       velocity_y;
@@ -34,7 +42,9 @@ struct Player {
     bool        landing;
     float       coyote_timer;
     float       jump_buffer_timer;
+    bool        double_jumped;  // true after the air jump has been used
     PlayerState state;
+    int         prev_anim_frame = -1; // previous frame index, for footstep detection
 
     Texture2D       spritesheet;
     Animation       anim_idle;
@@ -52,7 +62,8 @@ struct Player {
 void player_init(Player *player, Vector2 start_pos);
 
 // Process input, run tile collision, update state and animation.
-void player_update(Player *player, const Tilemap *tm, float dt);
+// Fills *triggers with sound events that fired this frame.
+void player_update(Player *player, const Tilemap *tm, float dt, PlayerSoundTriggers *triggers);
 
 // Draw the animated sprite.
 void player_draw(const Player *player);

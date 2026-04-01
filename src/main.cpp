@@ -23,6 +23,7 @@ int main(void)
     SetTargetFPS(60);
 
     GameState state{};
+    audio_init(&state.audio);
     load_level(&state, 0, screenWidth, screenHeight);
 
     while (!WindowShouldClose())
@@ -30,10 +31,17 @@ int main(void)
         float dt = GetFrameTime();
 
         // ── Update ────────────────────────────────────────────────────
-        player_update(&state.player, &state.tilemap, dt);
+        PlayerSoundTriggers triggers;
+        player_update(&state.player, &state.tilemap, dt, &triggers);
 
         Vector2 centre = player_center(&state.player);
         camera_update(&state.camera, centre, &state.tilemap, screenWidth, screenHeight, dt);
+
+        // ── Audio ─────────────────────────────────────────────────────
+        if (triggers.footstep_walk) audio_play_sfx(&state.audio, state.audio.snd_walk);
+        if (triggers.footstep_run)  audio_play_sfx(&state.audio, state.audio.snd_run);
+        if (triggers.landed)        audio_play_sfx(&state.audio, state.audio.snd_land);
+        if (triggers.attacked)      audio_play_sfx_pitched(&state.audio, state.audio.snd_attack, 0.85f, 1.15f);
 
         // ── Level transition ──────────────────────────────────────────
         const TileObject *exit = tilemap_get_object(&state.tilemap, "level_exit");
@@ -69,6 +77,7 @@ int main(void)
 
     player_cleanup(&state.player);
     tilemap_unload(&state.tilemap);
+    audio_cleanup(&state.audio);
     CloseWindow();
     return 0;
 }

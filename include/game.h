@@ -3,12 +3,14 @@
 #include "player.h"
 #include "tilemap.h"
 #include "camera.h"
+#include "audio.h"
 #include <string>
 
 struct GameState {
     Player     player;
     Tilemap    tilemap;
     GameCamera camera;
+    AudioState audio;
 
     // Level cycling: current level index (0 = level_01, 1 = level_02)
     int current_level = 0;

@@ -35,13 +35,18 @@ static void anim_init(Animation *a, Texture2D *tex, int row, int start_col, int 
 
 void player_init(Player *player, Vector2 start_pos)
 {
-    player->position          = start_pos;
+    // Align the bottom-left of the hitbox with start_pos.
+    player->position = {
+        start_pos.x - HITBOX_OFFSET_X,
+        start_pos.y - HITBOX_OFFSET_Y - HITBOX_H
+    };
     player->velocity_y        = 0.0f;
     player->grounded          = false;
     player->attacking         = false;
     player->landing           = false;
     player->coyote_timer      = 0.0f;
     player->jump_buffer_timer = 0.0f;
+    player->double_jumped     = false;
     player->state             = PLAYER_FALLING;
 
     player->spritesheet = LoadTexture("assets/character.png");
@@ -151,8 +156,10 @@ static void resolve_horizontal(Player *player, const Tilemap *tm, float dir_x)
 
 // ─────────────────────────────────────────────────────────────────────────────
 
-void player_update(Player *player, const Tilemap *tm, float dt)
+void player_update(Player *player, const Tilemap *tm, float dt, PlayerSoundTriggers *triggers)
 {
+    *triggers = PlayerSoundTriggers{};
+
     bool was_in_air = (player->state == PLAYER_JUMPING ||
                        player->state == PLAYER_PEAK    ||
                        player->state == PLAYER_FALLING);
@@ -209,7 +216,10 @@ void player_update(Player *player, const Tilemap *tm, float dt)
 
     // ── Coyote time ───────────────────────────────────────────────────
     if (player->grounded)
-        player->coyote_timer = COYOTE_TIME;
+    {
+        player->coyote_timer  = COYOTE_TIME;
+        player->double_jumped = false; // reset on landing
+    }
     else
         player->coyote_timer = fmaxf(0.0f, player->coyote_timer - dt);
 
@@ -219,7 +229,7 @@ void player_update(Player *player, const Tilemap *tm, float dt)
     else
         player->jump_buffer_timer = fmaxf(0.0f, player->jump_buffer_timer - dt);
 
-    // ── Execute jump ──────────────────────────────────────────────────
+    // ── Execute jump (first jump) ─────────────────────────────────────
     if (player->jump_buffer_timer > 0.0f && player->coyote_timer > 0.0f)
     {
         player->velocity_y        = JUMP_VELOCITY;
@@ -228,13 +238,48 @@ void player_update(Player *player, const Tilemap *tm, float dt)
         player->jump_buffer_timer = 0.0f;
         player->landing           = false;
     }
+    // ── Double jump (air jump) ────────────────────────────────────────
+    // Available once while airborne — consumed immediately on press (no buffer).
+    else if (jump_pressed && !player->grounded && !player->double_jumped)
+    {
+        player->velocity_y    = JUMP_VELOCITY;
+        player->double_jumped = true;
+        player->landing       = false;
+        // Restart the jump_begin animation from frame 0 for visual feedback.
+        player->anim_player.current     = nullptr; // force animation_player_set to reset
+        animation_player_set(&player->anim_player, &player->anim_jump_begin);
+    }
 
     // ── Advance animation (before state machine to detect anim end) ───
+    int frame_before = player->anim_player.frame_index;
     animation_player_update(&player->anim_player, dt);
+    int frame_after  = player->anim_player.frame_index;
+
+    // ── Footstep sound triggers ───────────────────────────────────────
+    // Fire when the animation crosses a footstep frame (frame changed AND landed on it).
+    // Walk footstep frames: 0, 2  |  Run footstep frames: 0, 2, 4, 6
+    if (frame_after != frame_before)
+    {
+        const Animation *cur = player->anim_player.current;
+        if (cur == &player->anim_walk)
+        {
+            if (frame_after == 0 || frame_after == 2)
+                triggers->footstep_walk = true;
+        }
+        else if (cur == &player->anim_run)
+        {
+            if (frame_after == 0 || frame_after == 2 || frame_after == 4 || frame_after == 6)
+                triggers->footstep_run = true;
+        }
+    }
+    player->prev_anim_frame = frame_after;
 
     // ── Landing trigger ───────────────────────────────────────────────
     if (player->grounded && was_in_air && !player->attacking)
-        player->landing = true;
+    {
+        player->landing   = true;
+        triggers->landed  = true;
+    }
 
     if (player->landing && !player->grounded)
         player->landing = false;
@@ -256,8 +301,9 @@ void player_update(Player *player, const Tilemap *tm, float dt)
 
     if (!player->attacking && attack_pressed)
     {
-        player->attacking = true;
-        player->landing   = false;
+        player->attacking  = true;
+        player->landing    = false;
+        triggers->attacked = true;
         animation_player_set(&player->anim_player, &player->anim_attack);
     }
 
