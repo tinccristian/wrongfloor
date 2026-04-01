@@ -11,10 +11,8 @@ void camera_init(GameCamera *gc, Vector2 target, int screen_w, int screen_h)
 void camera_update(GameCamera *gc, Vector2 target, const Tilemap *tm,
                    int screen_w, int screen_h, float dt)
 {
-    // Lerp toward player centre
-    float t = 1.0f - (1.0f / (1.0f + gc->smooth * dt)); // frame-rate-independent lerp factor
-    gc->cam.target.x += (target.x - gc->cam.target.x) * t;
-    gc->cam.target.y += (target.y - gc->cam.target.y) * t;
+    (void)dt;
+    gc->cam.target = target;
 
     // Clamp so the viewport never shows past map edges
     if (tm && tm->map_width > 0 && tm->map_height > 0)

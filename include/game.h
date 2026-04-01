@@ -1,6 +1,7 @@
 #pragma once
 
 #include "player.h"
+#include "bullets.h"
 #include "tilemap.h"
 #include "camera.h"
 #include "audio.h"
@@ -19,6 +20,7 @@ inline std::string assets_path(const std::string& rel)
 
 struct GameState {
     Player     player;
+    BulletSystem bullets;
     Tilemap    tilemap;
     GameCamera camera;
     AudioState audio;

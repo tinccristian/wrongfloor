@@ -12,6 +12,7 @@ static void load_level(GameState *gs, int index, int screen_w, int screen_h)
 
     Vector2 spawn = tilemap_get_spawn_point(&gs->tilemap);
     player_init(&gs->player, spawn);
+    gs->bullets.bullets.clear();
 
     Vector2 centre = player_center(&gs->player);
     camera_init(&gs->camera, centre, screen_w, screen_h);
@@ -28,6 +29,7 @@ int main(void)
 
     GameState state{};
     audio_init(&state.audio);
+    bullets_init(&state.bullets);
     load_level(&state, 0, screenWidth, screenHeight);
 
 #ifdef DEV_MODE
@@ -46,8 +48,10 @@ int main(void)
 #endif
 
         // ── Update ────────────────────────────────────────────────────
+        Vector2 mouse_world = GetScreenToWorld2D(GetMousePosition(), state.camera.cam);
         PlayerSoundTriggers triggers;
-        player_update(&state.player, &state.tilemap, dt, &triggers, input_blocked);
+        player_update(&state.player, &state.tilemap, dt, mouse_world, &triggers, input_blocked);
+        bullets_update(&state.bullets, dt);
 
         Vector2 centre = player_center(&state.player);
         camera_update(&state.camera, centre, &state.tilemap, screenWidth, screenHeight, dt);
@@ -57,12 +61,14 @@ int main(void)
 
         if (triggers.footstep_walk) audio_play_footstep(&state.audio, state.audio.snd_walk);
         if (triggers.footstep_run)  audio_play_footstep(&state.audio, state.audio.snd_run);
-        if (triggers.landed)        audio_play_sfx(&state.audio, state.audio.snd_land);
-        if (triggers.attacked)      audio_play_sfx_pitched(&state.audio, state.audio.snd_attack, 0.85f, 1.15f);
+        if (triggers.attacked)
+        {
+            audio_play_sfx_pitched(&state.audio, state.audio.snd_attack, 0.95f, 1.05f);
+            bullets_spawn(&state.bullets, triggers.attack_origin, triggers.attack_direction);
+        }
 
         if (ps != PLAYER_WALKING)   StopSound(state.audio.snd_walk);
         if (ps != PLAYER_RUNNING)   StopSound(state.audio.snd_run);
-        if (ps != PLAYER_ATTACKING) StopSound(state.audio.snd_attack);
 
         // ── Level transition ──────────────────────────────────────────
         const TileObject *exit = tilemap_get_object(&state.tilemap, "level_exit");
@@ -85,12 +91,15 @@ int main(void)
         // ── Draw ──────────────────────────────────────────────────────
         BeginDrawing();
             ClearBackground(Color{30, 28, 36, 255});
+            player_prepare_draw(&state.player);
 
             BeginMode2D(state.camera.cam);
                 tilemap_draw_layers_prefixed(&state.tilemap, "background");
                 tilemap_draw_layers_prefixed(&state.tilemap, "midground");
+                bullets_draw(&state.bullets);
                 player_draw(&state.player);
                 tilemap_draw_layers_prefixed(&state.tilemap, "foreground");
+                player_draw_crosshair(&state.player);
 #ifdef DEV_MODE
                 debug_draw_world(&debug, &state.tilemap, &state.player);
 #endif
@@ -103,6 +112,7 @@ int main(void)
     }
 
     player_cleanup(&state.player);
+    bullets_cleanup(&state.bullets);
     tilemap_unload(&state.tilemap);
     audio_cleanup(&state.audio);
     CloseWindow();

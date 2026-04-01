@@ -20,10 +20,6 @@ static const char *player_state_name(PlayerState s)
         case PLAYER_IDLE:      return "IDLE";
         case PLAYER_WALKING:   return "WALKING";
         case PLAYER_RUNNING:   return "RUNNING";
-        case PLAYER_JUMPING:   return "JUMPING";
-        case PLAYER_PEAK:      return "PEAK";
-        case PLAYER_FALLING:   return "FALLING";
-        case PLAYER_LANDING:   return "LANDING";
         case PLAYER_ATTACKING: return "ATTACKING";
         default:               return "UNKNOWN";
     }
@@ -123,6 +119,12 @@ void debug_init(DebugState *d)
         [](DebugState *ds) {
             ds->show_player_collider = !ds->show_player_collider;
             push_output(ds, std::string("showPlayerCollider: ") + (ds->show_player_collider ? "ON" : "OFF"));
+        });
+
+    debug_register_command(d, "showFps", "Toggle FPS display",
+        [](DebugState *ds) {
+            ds->show_fps = !ds->show_fps;
+            push_output(ds, std::string("showFps: ") + (ds->show_fps ? "ON" : "OFF"));
         });
 }
 
@@ -254,12 +256,11 @@ void debug_draw_world(const DebugState *d, const Tilemap *tm, const Player *play
         // Build the three lines
         char line_state[32];
         char line_vel[48];
-        char line_grnd[24];
+        char line_aim[32];
         snprintf(line_state, sizeof(line_state), "%s", player_state_name(player->state));
         snprintf(line_vel,   sizeof(line_vel),   "vel: (%.1f, %.1f)",
                  player->velocity_x, player->velocity_y);
-        snprintf(line_grnd,  sizeof(line_grnd),  "grounded: %s",
-                 player->grounded ? "true" : "false");
+        snprintf(line_aim,   sizeof(line_aim),   "aim: %.1f deg", player->aim_angle_deg);
 
         int fs  = 14;
         int lh  = 16;
@@ -269,11 +270,11 @@ void debug_draw_world(const DebugState *d, const Tilemap *tm, const Player *play
         // Shadow
         DrawText(line_state, (int)tx + 1, (int)ty + 1,         fs, BLACK);
         DrawText(line_vel,   (int)tx + 1, (int)ty + lh + 1,    fs, BLACK);
-        DrawText(line_grnd,  (int)tx + 1, (int)ty + lh * 2 + 1, fs, BLACK);
+        DrawText(line_aim,   (int)tx + 1, (int)ty + lh * 2 + 1, fs, BLACK);
         // Text
         DrawText(line_state, (int)tx, (int)ty,         fs, WHITE);
         DrawText(line_vel,   (int)tx, (int)ty + lh,    fs, WHITE);
-        DrawText(line_grnd,  (int)tx, (int)ty + lh * 2, fs, WHITE);
+        DrawText(line_aim,   (int)tx, (int)ty + lh * 2, fs, WHITE);
     }
 }
 
@@ -281,6 +282,13 @@ void debug_draw_world(const DebugState *d, const Tilemap *tm, const Player *play
 
 void debug_draw_ui(DebugState *d, int screen_w, int screen_h)
 {
+    if (d->show_fps)
+    {
+        const char *fps_text = TextFormat("FPS: %d", GetFPS());
+        DrawText(fps_text, 9, 9, FONT_SIZE, BLACK);
+        DrawText(fps_text, 8, 8, FONT_SIZE, Color{210, 255, 210, 255});
+    }
+
     if (!d->console_open) return;
 
     int console_h = screen_h / 3;

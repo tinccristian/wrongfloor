@@ -37,6 +37,7 @@ struct DebugState {
     bool show_colliders      = false;
     bool show_player_state   = false;
     bool show_player_collider = false;
+    bool show_fps           = false;
 
     // ── Command registry ──────────────────────────────────────────────
     std::map<std::string, DebugCommand> commands;

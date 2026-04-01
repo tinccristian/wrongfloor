@@ -30,3 +30,7 @@ void animation_player_update(AnimationPlayer *ap, float dt);
 
 // Draw the current frame at position (top-left) scaled by scale.
 void animation_player_draw(const AnimationPlayer *ap, Vector2 position, float scale);
+
+// Draw the current frame with a custom rotation origin in destination pixels.
+void animation_player_draw_rotated(const AnimationPlayer *ap, Vector2 position, float scale,
+                                   float rotation_deg, Vector2 origin);
