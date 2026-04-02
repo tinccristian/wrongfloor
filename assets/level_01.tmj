@@ -269,7 +269,7 @@
  "tilesets":[
         {
          "firstgid":1,
-         "source":"..\/tiled\/tiles.tsx"
+         "source":"tiled\/tiles.tsx"
         }],
  "tilewidth":32,
  "type":"map",

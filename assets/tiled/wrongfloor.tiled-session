@@ -29,16 +29,16 @@
             "scale": 1,
             "selectedLayer": 1,
             "viewCenter": {
-                "x": 675,
-                "y": 368.5
+                "x": 681.5,
+                "y": 281
             }
         },
         "D:/dev/gitHub/wrongfloor/assets/levels/level_02.tmj": {
             "scale": 1.3396484375,
             "selectedLayer": 0,
             "viewCenter": {
-                "x": 639.7200758128007,
-                "y": 367.6337658550809
+                "x": 640.0933080623997,
+                "y": 368.00699810467995
             }
         },
         "D:/dev/gitHub/wrongfloor/assets/levels/tiled/tiles.tsx": {
