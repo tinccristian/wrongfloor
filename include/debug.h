@@ -11,11 +11,15 @@
 #include <functional>
 
 struct DebugState;
-using DebugCallback = std::function<void(DebugState *)>;
+// args = everything after the command name (trimmed), empty string if none.
+using DebugCallback      = std::function<void(DebugState *, const std::string& args)>;
+// Returns completions matching prefix, sorted. Called on Tab in arg position.
+using CompletionCallback = std::function<std::vector<std::string>(const std::string& prefix)>;
 
 struct DebugCommand {
-    std::string  description;
-    DebugCallback callback;
+    std::string        description;
+    DebugCallback      callback;
+    CompletionCallback get_completions; // optional; null if no argument completions
 };
 
 struct DebugState {
@@ -52,9 +56,13 @@ void debug_init(DebugState *d);
 // Returns true if the console is open (caller should pass input_blocked=true to player_update).
 bool debug_update(DebugState *d, float dt);
 
-// Register a custom command. The callback receives the DebugState* and may push output lines.
+// Register a custom command. Optionally provide a completion callback for Tab on the argument.
 void debug_register_command(DebugState *d, const std::string& name,
-                             const std::string& description, DebugCallback callback);
+                             const std::string& description, DebugCallback callback,
+                             CompletionCallback get_completions = nullptr);
+
+// Append a line to the console output. Safe to call from registered command callbacks.
+void debug_print(DebugState *d, const std::string& line);
 
 // Draw world-space debug overlays. Call inside BeginMode2D.
 void debug_draw_world(const DebugState *d, const GameState *state);

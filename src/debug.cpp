@@ -39,50 +39,93 @@ static std::string to_lower(const std::string& s)
     return r;
 }
 
+// Split "cmd arg..." into ("cmd", "arg..."). args is empty string if no space.
+static void split_cmd(const std::string& input, std::string& cmd, std::string& args)
+{
+    size_t sp = input.find(' ');
+    if (sp == std::string::npos) { cmd = input; args = ""; }
+    else                         { cmd = input.substr(0, sp); args = input.substr(sp + 1); }
+}
+
 static void rebuild_tab_matches(DebugState *d)
 {
     d->tab_matches.clear();
     d->tab_index = -1;
-    std::string prefix_lower = to_lower(d->input);
-    for (auto &[name, _] : d->commands)
-        if (!d->input.empty() && to_lower(name).rfind(prefix_lower, 0) == 0)
-            d->tab_matches.push_back(name); // store original casing
-    std::sort(d->tab_matches.begin(), d->tab_matches.end(),
-              [](const std::string &a, const std::string &b) {
-                  return to_lower(a) < to_lower(b);
-              });
+
+    size_t space = d->input.find(' ');
+
+    if (space != std::string::npos)
+    {
+        // ── Argument completion mode ───────────────────────────────────
+        std::string cmd_part  = d->input.substr(0, space);
+        std::string arg_part  = d->input.substr(space + 1);
+        std::string cmd_lower = to_lower(cmd_part);
+
+        for (auto& [name, entry] : d->commands)
+        {
+            if (to_lower(name) == cmd_lower && entry.get_completions)
+            {
+                auto completions = entry.get_completions(arg_part);
+                for (auto& c : completions)
+                    d->tab_matches.push_back(cmd_part + " " + c);
+                break;
+            }
+        }
+        // Already sorted by get_completions contract.
+    }
+    else
+    {
+        // ── Command name completion mode (existing behaviour) ──────────
+        std::string prefix_lower = to_lower(d->input);
+        for (auto& [name, _] : d->commands)
+            if (!d->input.empty() && to_lower(name).rfind(prefix_lower, 0) == 0)
+                d->tab_matches.push_back(name);
+        std::sort(d->tab_matches.begin(), d->tab_matches.end(),
+                  [](const std::string& a, const std::string& b) {
+                      return to_lower(a) < to_lower(b);
+                  });
+    }
 }
 
 static void execute(DebugState *d, const std::string& raw)
 {
-    // trim leading/trailing whitespace
+    // Trim leading/trailing whitespace.
     size_t a = raw.find_first_not_of(" \t");
     size_t b = raw.find_last_not_of(" \t");
     if (a == std::string::npos) return;
-    std::string cmd = raw.substr(a, b - a + 1);
-    if (cmd.empty()) return;
+    std::string full = raw.substr(a, b - a + 1);
+    if (full.empty()) return;
 
-    push_output(d, "> " + cmd);
+    push_output(d, "> " + full);
 
-    // Case-insensitive lookup: find the command whose lowercased name matches
-    std::string cmd_lower = to_lower(cmd);
-    for (auto &[name, entry] : d->commands)
+    // Split into command name + args.
+    std::string cmd_name, cmd_args;
+    split_cmd(full, cmd_name, cmd_args);
+
+    std::string cmd_lower = to_lower(cmd_name);
+    for (auto& [name, entry] : d->commands)
     {
         if (to_lower(name) == cmd_lower)
         {
-            entry.callback(d);
+            entry.callback(d, cmd_args);
             return;
         }
     }
-    push_output(d, "Unknown command: " + cmd + ". Type 'help' for a list.");
+    push_output(d, "Unknown command: " + cmd_name + ". Type 'help' for a list.");
 }
 
 // ── Public API ────────────────────────────────────────────────────────────────
 
 void debug_register_command(DebugState *d, const std::string& name,
-                             const std::string& description, DebugCallback callback)
+                             const std::string& description, DebugCallback callback,
+                             CompletionCallback get_completions)
 {
-    d->commands[name] = { description, std::move(callback) };
+    d->commands[name] = { description, std::move(callback), std::move(get_completions) };
+}
+
+void debug_print(DebugState *d, const std::string& line)
+{
+    push_output(d, line);
 }
 
 void debug_init(DebugState *d)
@@ -91,56 +134,56 @@ void debug_init(DebugState *d)
     SetExitKey(0);
 
     debug_register_command(d, "quit", "Quit the game",
-        [](DebugState *) { CloseWindow(); });
+        [](DebugState *, const std::string&) { CloseWindow(); });
 
     debug_register_command(d, "help", "List all available commands",
-        [](DebugState *ds) {
+        [](DebugState *ds, const std::string&) {
             push_output(ds, "Available commands:");
-            for (auto &[name, cmd] : ds->commands)
+            for (auto& [name, cmd] : ds->commands)
                 push_output(ds, "  " + name + " — " + cmd.description);
         });
 
     debug_register_command(d, "clear", "Clear console output",
-        [](DebugState *ds) { ds->output.clear(); });
+        [](DebugState *ds, const std::string&) { ds->output.clear(); });
 
     debug_register_command(d, "showColliders", "Toggle collision layer overlay",
-        [](DebugState *ds) {
+        [](DebugState *ds, const std::string&) {
             ds->show_colliders = !ds->show_colliders;
             push_output(ds, std::string("showColliders: ") + (ds->show_colliders ? "ON" : "OFF"));
         });
 
     debug_register_command(d, "showPlayerState", "Toggle player state info overlay",
-        [](DebugState *ds) {
+        [](DebugState *ds, const std::string&) {
             ds->show_player_state = !ds->show_player_state;
             push_output(ds, std::string("showPlayerState: ") + (ds->show_player_state ? "ON" : "OFF"));
         });
 
     debug_register_command(d, "showPlayerCollider", "Toggle player hitbox overlay",
-        [](DebugState *ds) {
+        [](DebugState *ds, const std::string&) {
             ds->show_player_collider = !ds->show_player_collider;
             push_output(ds, std::string("showPlayerCollider: ") + (ds->show_player_collider ? "ON" : "OFF"));
         });
 
     debug_register_command(d, "showFps", "Toggle FPS display",
-        [](DebugState *ds) {
+        [](DebugState *ds, const std::string&) {
             ds->show_fps = !ds->show_fps;
             push_output(ds, std::string("showFps: ") + (ds->show_fps ? "ON" : "OFF"));
         });
 
     debug_register_command(d, "showEnemyColliders", "Toggle enemy collision radius overlay",
-        [](DebugState *ds) {
+        [](DebugState *ds, const std::string&) {
             ds->show_enemy_colliders = !ds->show_enemy_colliders;
             push_output(ds, std::string("showEnemyColliders: ") + (ds->show_enemy_colliders ? "ON" : "OFF"));
         });
 
     debug_register_command(d, "showBulletColliders", "Toggle bullet collision radius overlay",
-        [](DebugState *ds) {
+        [](DebugState *ds, const std::string&) {
             ds->show_bullet_colliders = !ds->show_bullet_colliders;
             push_output(ds, std::string("showBulletColliders: ") + (ds->show_bullet_colliders ? "ON" : "OFF"));
         });
 
     debug_register_command(d, "showBloodCount", "Toggle active/settled blood pixel count display",
-        [](DebugState *ds) {
+        [](DebugState *ds, const std::string&) {
             ds->show_blood_count = !ds->show_blood_count;
             push_output(ds, std::string("showBloodCount: ") + (ds->show_blood_count ? "ON" : "OFF"));
         });
@@ -200,7 +243,6 @@ bool debug_update(DebugState *d, float dt)
     // Tab autocomplete
     if (IsKeyPressed(KEY_TAB) && !d->input.empty())
     {
-        // Rebuild match list if input changed since last Tab
         if (d->input != d->last_tab_input)
             rebuild_tab_matches(d);
 
@@ -219,7 +261,6 @@ bool debug_update(DebugState *d, float dt)
         if (ch >= 32 && (int)d->input.size() < MAX_INPUT_LEN)
         {
             d->input += (char)ch;
-            // Any typed character invalidates the tab state
             d->tab_matches.clear();
             d->tab_index      = -1;
             d->last_tab_input = "";
@@ -239,7 +280,7 @@ void debug_draw_world(const DebugState *d, const GameState *state)
     // ── Collision layer overlay ───────────────────────────────────────
     if (d->show_colliders && tm)
     {
-        for (const auto &layer : tm->tile_layers)
+        for (const auto& layer : tm->tile_layers)
         {
             if (layer.name != "collision") continue;
             for (int ty = 0; ty < layer.height; ty++)
@@ -282,11 +323,9 @@ void debug_draw_world(const DebugState *d, const GameState *state)
         float tx = hb.x;
         float ty = hb.y - 3 * lh - 4.0f;
 
-        // Shadow
         DrawText(line_state, (int)tx + 1, (int)ty + 1,          fs, BLACK);
         DrawText(line_vel,   (int)tx + 1, (int)ty + lh + 1,     fs, BLACK);
         DrawText(line_aim,   (int)tx + 1, (int)ty + lh * 2 + 1, fs, BLACK);
-        // Text
         DrawText(line_state, (int)tx, (int)ty,          fs, WHITE);
         DrawText(line_vel,   (int)tx, (int)ty + lh,     fs, WHITE);
         DrawText(line_aim,   (int)tx, (int)ty + lh * 2, fs, WHITE);
@@ -295,7 +334,7 @@ void debug_draw_world(const DebugState *d, const GameState *state)
     // ── Enemy collision rectangles ────────────────────────────────────
     if (d->show_enemy_colliders)
     {
-        for (const auto &enemy : state->enemies.enemies)
+        for (const auto& enemy : state->enemies.enemies)
         {
             if (!enemy.alive) continue;
             Rectangle hb = enemy_hitbox_rect(&enemy);
@@ -305,12 +344,10 @@ void debug_draw_world(const DebugState *d, const GameState *state)
     }
 
     // ── Bullet positions ──────────────────────────────────────────────
-    // Bullets use point collision (CheckCollisionPointRec), so draw a small
-    // crosshair to show the exact point being tested.
     if (d->show_bullet_colliders)
     {
         static constexpr float BULLET_DEBUG_R = 3.0f;
-        for (const auto &bullet : state->bullets.bullets)
+        for (const auto& bullet : state->bullets.bullets)
         {
             if (bullet.dead) continue;
             DrawCircleV(bullet.position, BULLET_DEBUG_R, Color{255, 255, 50, 180});
@@ -354,30 +391,24 @@ void debug_draw_ui(DebugState *d, const GameState *state, int screen_w, int scre
     int console_h = screen_h / 3;
     int console_y = screen_h - console_h;
 
-    // Background
     DrawRectangle(0, console_y, screen_w, console_h, Color{10, 10, 15, 210});
     DrawLine(0, console_y, screen_w, console_y, Color{80, 80, 100, 255});
 
-    // How many history lines fit above the input row
     int input_line_y = screen_h - LINE_H - PADDING;
     int available_h  = input_line_y - console_y - PADDING;
     int max_lines    = available_h / LINE_H;
 
-    // Draw history (most recent lines fill upward)
     int count = (int)d->output.size();
     int start = count > max_lines ? count - max_lines : 0;
     int y     = console_y + PADDING;
     for (int i = start; i < count; i++, y += LINE_H)
     {
-        // Shadow
         DrawText(d->output[i].c_str(), PADDING + 1, y + 1, FONT_SIZE, BLACK);
         DrawText(d->output[i].c_str(), PADDING,     y,     FONT_SIZE, Color{190, 190, 200, 255});
     }
 
-    // Separator above input
     DrawLine(0, input_line_y - 2, screen_w, input_line_y - 2, Color{60, 60, 80, 200});
 
-    // Input line with blinking cursor
     std::string display = "> " + d->input;
     if (d->cursor_visible) display += "_";
     DrawText(display.c_str(), PADDING, input_line_y, FONT_SIZE, WHITE);

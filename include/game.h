@@ -36,5 +36,5 @@ struct GameState {
 };
 
 // Level file names (relative to assets root — prepend via assets_path())
-inline const char* LEVELS[] = { "level_01.tmj", "level_02.tmj" };
+inline const char* LEVELS[] = { "levels/level_01.tmj", "levels/level_02.tmj" };
 inline constexpr int LEVEL_COUNT = 2;
