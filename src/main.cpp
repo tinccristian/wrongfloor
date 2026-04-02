@@ -1,6 +1,7 @@
 #include "raylib.h"
 #include "game.h"
 #include "gameplay.h"
+#include "pause_menu.h"
 
 #ifdef DEV_MODE
 #include "debug.h"
@@ -13,9 +14,13 @@ int main(void)
 
     InitWindow(screenWidth, screenHeight, "wrongfloor");
     SetTargetFPS(60);
+    SetExitKey(0); // Escape is handled manually
 
     GameState state{};
     gameplay_init(&state, screenWidth, screenHeight);
+
+    PauseMenu pause_menu{};
+    pause_menu_init(&pause_menu);
 
 #ifdef DEV_MODE
     DebugState debug{};
@@ -26,15 +31,62 @@ int main(void)
     {
         float dt = GetFrameTime();
 
-        // ── Debug update (runs before player, may block input) ────────
-        bool input_blocked = false;
+        // ── Debug update (runs first, may consume Escape) ─────────────
+        bool input_blocked  = false;
+        bool escape_consumed = false;
+
 #ifdef DEV_MODE
+        bool was_console_open = debug.console_open;
         input_blocked = debug_update(&debug, dt);
+        // Escape closes the console — don't also trigger pause this frame.
+        if (was_console_open && !debug.console_open)
+            escape_consumed = true;
 #endif
 
-        gameplay_update(&state, dt, screenWidth, screenHeight, input_blocked);
+        // ── Pause toggle ──────────────────────────────────────────────
+        bool pause_pressed = !escape_consumed &&
+            (IsKeyPressed(KEY_ESCAPE) ||
+             IsGamepadButtonPressed(0, GAMEPAD_BUTTON_MIDDLE_RIGHT));
+
+        if (pause_pressed)
+        {
+            state.paused = !state.paused;
+            if (state.paused)
+                pause_menu_init(&pause_menu); // reset selection each time we open
+        }
+
+        // ── Update ────────────────────────────────────────────────────
+        if (state.paused)
+        {
+            PauseAction action = pause_menu_update(&pause_menu, &state.audio, dt, screenWidth, screenHeight);
+            switch (action)
+            {
+                case PauseAction::Resume:
+                    state.paused = false;
+                    break;
+                case PauseAction::Restart:
+                    gameplay_reload_level(&state, screenWidth, screenHeight);
+                    state.paused = false;
+                    break;
+                case PauseAction::MainMenu:
+                    gameplay_load_level(&state, 0, screenWidth, screenHeight);
+                    state.paused = false;
+                    break;
+                case PauseAction::Exit:
+                    goto cleanup;
+                case PauseAction::None:
+                    break;
+            }
+        }
+        else
+        {
+            gameplay_update(&state, dt, screenWidth, screenHeight,
+                            input_blocked || state.paused);
+        }
+
         gameplay_prepare_draw(&state);
 
+        // ── Draw ──────────────────────────────────────────────────────
         BeginDrawing();
             ClearBackground(Color{30, 28, 36, 255});
 
@@ -45,12 +97,16 @@ int main(void)
 #endif
             EndMode2D();
 
+            if (state.paused)
+                pause_menu_draw(&pause_menu, screenWidth, screenHeight);
+
 #ifdef DEV_MODE
             debug_draw_ui(&debug, &state, screenWidth, screenHeight);
 #endif
         EndDrawing();
     }
 
+cleanup:
     gameplay_cleanup(&state);
     CloseWindow();
     return 0;
