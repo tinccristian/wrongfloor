@@ -117,6 +117,44 @@
                  "width":0,
                  "x":948,
                  "y":642
+                }, 
+                {
+                 "height":0,
+                 "id":13,
+                 "name":"weapon",
+                 "opacity":1,
+                 "point":true,
+                 "properties":[
+                        {
+                         "name":"weapon_type",
+                         "type":"string",
+                         "value":"assault_riffle"
+                        }],
+                 "rotation":0,
+                 "type":"assault_riffle",
+                 "visible":true,
+                 "width":0,
+                 "x":134,
+                 "y":406
+                }, 
+                {
+                 "height":0,
+                 "id":14,
+                 "name":"weapon",
+                 "opacity":1,
+                 "point":true,
+                 "properties":[
+                        {
+                         "name":"weapon_type",
+                         "type":"string",
+                         "value":"assault_riffle"
+                        }],
+                 "rotation":0,
+                 "type":"assault_riffle",
+                 "visible":true,
+                 "width":0,
+                 "x":940,
+                 "y":220
                 }],
          "opacity":1,
          "type":"objectgroup",
@@ -261,7 +299,7 @@
          "y":0
         }],
  "nextlayerid":9,
- "nextobjectid":13,
+ "nextobjectid":15,
  "orientation":"orthogonal",
  "renderorder":"right-down",
  "tiledversion":"1.12.1",
