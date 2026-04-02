@@ -86,6 +86,7 @@ bool tilemap_load(Tilemap *tm, const std::string& path)
             {
                 TileObject to;
                 to.name   = obj.value("name",   "");
+                to.type   = obj.value("type",   obj.value("class", ""));
                 to.x      = obj.value("x",      0.0f);
                 to.y      = obj.value("y",      0.0f);
                 to.width  = obj.value("width",  0.0f);

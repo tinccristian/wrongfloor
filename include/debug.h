@@ -44,6 +44,7 @@ struct DebugState {
     bool show_enemy_colliders  = false;
     bool show_bullet_colliders = false;
     bool show_blood_count      = false;
+    bool show_weapon_info      = false;
 
     // ── Command registry ──────────────────────────────────────────────
     std::map<std::string, DebugCommand> commands;

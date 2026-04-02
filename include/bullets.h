@@ -21,8 +21,8 @@ struct BulletSystem {
 // Load the bullet spritesheet and initialise runtime state.
 void bullets_init(BulletSystem *system);
 
-// Spawn a bullet travelling in direction from origin.
-void bullets_spawn(BulletSystem *system, Vector2 origin, Vector2 direction);
+// Spawn a bullet travelling in direction from origin at the given speed (px/sec).
+void bullets_spawn(BulletSystem *system, Vector2 origin, Vector2 direction, float speed);
 
 // Remove all live bullets without unloading the spritesheet.
 void bullets_clear(BulletSystem *system);

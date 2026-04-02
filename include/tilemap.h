@@ -10,6 +10,7 @@ inline constexpr int TILE_SIZE = 32;
 
 struct TileObject {
     std::string name;
+    std::string type;   // Tiled object Class field (exported as "type" or "class" in JSON)
     float x, y, width, height;
     // Custom properties from Tiled (string-typed only; other types are ignored).
     std::map<std::string, std::string> properties;

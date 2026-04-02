@@ -14,6 +14,9 @@ void gameplay_prepare_draw(GameState *state);
 // Draw world-space gameplay layers and entities inside an active Camera2D pass.
 void gameplay_draw_world(GameState *state);
 
+// Draw screen-space HUD elements (ammo counter, etc.). Call outside BeginMode2D.
+void gameplay_draw_hud(GameState *state, int screen_w, int screen_h);
+
 // Release gameplay-owned resources.
 void gameplay_cleanup(GameState *state);
 

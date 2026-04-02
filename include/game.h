@@ -7,6 +7,7 @@
 #include "audio.h"
 #include "enemy.h"
 #include "effects.h"
+#include "weapon.h"
 #include <string>
 
 // Returns the base asset directory: the source folder in dev builds (instant
@@ -28,6 +29,7 @@ struct GameState {
     AudioState    audio;
     EnemyManager  enemies;
     EffectsSystem effects;
+    WeaponManager weapons;
 
     // Level cycling: current level index (0 = level_01, 1 = level_02)
     int current_level = 0;

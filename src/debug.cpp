@@ -20,7 +20,6 @@ static const char *player_state_name(PlayerState s)
         case PLAYER_IDLE:      return "IDLE";
         case PLAYER_WALKING:   return "WALKING";
         case PLAYER_RUNNING:   return "RUNNING";
-        case PLAYER_ATTACKING: return "ATTACKING";
         default:               return "UNKNOWN";
     }
 }
@@ -186,6 +185,12 @@ void debug_init(DebugState *d)
         [](DebugState *ds, const std::string&) {
             ds->show_blood_count = !ds->show_blood_count;
             push_output(ds, std::string("showBloodCount: ") + (ds->show_blood_count ? "ON" : "OFF"));
+        });
+
+    debug_register_command(d, "showWeaponInfo", "Toggle weapon state overlays (ammo, state, cooldown)",
+        [](DebugState *ds, const std::string&) {
+            ds->show_weapon_info = !ds->show_weapon_info;
+            push_output(ds, std::string("showWeaponInfo: ") + (ds->show_weapon_info ? "ON" : "OFF"));
         });
 }
 
@@ -357,6 +362,36 @@ void debug_draw_world(const DebugState *d, const GameState *state)
             DrawLineV({ bullet.position.x, bullet.position.y - BULLET_DEBUG_R * 2 },
                       { bullet.position.x, bullet.position.y + BULLET_DEBUG_R * 2 },
                       Color{255, 230, 60, 255});
+        }
+    }
+
+    // ── Weapon info overlays ──────────────────────────────────────────
+    if (d->show_weapon_info)
+    {
+        for (const auto& w : state->weapons.weapons)
+        {
+            if (!w.data) continue;
+            Vector2 pos = w.is_held ? w.render_pos : w.position;
+            const char *status = w.is_held ? "HELD" : (w.is_thrown ? "THROWN" : "GROUND");
+            char info[128];
+            snprintf(info, sizeof(info), "%s %d/%d %s%s",
+                     w.data->name.c_str(),
+                     w.current_ammo, w.data->magazine_size,
+                     status, w.is_reloading ? " RELOAD" : "");
+            DrawText(info, (int)pos.x - 30 + 1, (int)pos.y - 22 + 1, 10, BLACK);
+            DrawText(info, (int)pos.x - 30,     (int)pos.y - 22,     10, Color{255, 255, 100, 220});
+
+            if (w.is_held)
+            {
+                float bar_w = 30.0f;
+                float fill  = (w.data->fire_rate > 0.0f)
+                    ? std::max(0.0f, 1.0f - w.fire_cooldown_timer * w.data->fire_rate)
+                    : 1.0f;
+                int bx = (int)pos.x - 15;
+                int by = (int)pos.y + 10;
+                DrawRectangle(bx, by, (int)bar_w, 3, Color{50, 50, 50, 200});
+                DrawRectangle(bx, by, (int)(bar_w * fill), 3, Color{255, 200, 50, 220});
+            }
         }
     }
 }

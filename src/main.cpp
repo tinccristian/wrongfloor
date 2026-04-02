@@ -188,6 +188,8 @@ int main(void)
 #endif
             EndMode2D();
 
+            gameplay_draw_hud(&state, screenWidth, screenHeight);
+
             if (state.paused)
                 pause_menu_draw(&pause_menu, screenWidth, screenHeight);
 

@@ -49,14 +49,14 @@ void bullets_init(BulletSystem *system)
     system->bullets.clear();
 }
 
-void bullets_spawn(BulletSystem *system, Vector2 origin, Vector2 direction)
+void bullets_spawn(BulletSystem *system, Vector2 origin, Vector2 direction, float speed)
 {
     if (!system) return;
     if (Vector2LengthSqr(direction) <= 0.0001f) return;
 
     Bullet bullet;
     bullet.position = origin;
-    bullet.velocity = Vector2Scale(Vector2Normalize(direction), BULLET_SPEED);
+    bullet.velocity = Vector2Scale(Vector2Normalize(direction), speed);
     bullet.lifetime = BULLET_LIFETIME;
     system->bullets.push_back(bullet);
 }
