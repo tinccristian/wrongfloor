@@ -7,6 +7,7 @@ struct AudioState {
     Sound snd_run;
     Sound snd_land;
     Sound snd_attack;
+    Sound snd_menu;   // used for pause menu navigation and confirm
 
     float master_volume = 0.8f;
     float sfx_volume    = 1.0f;

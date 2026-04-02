@@ -16,3 +16,9 @@ void gameplay_draw_world(GameState *state);
 
 // Release gameplay-owned resources.
 void gameplay_cleanup(GameState *state);
+
+// Reload the current level from scratch (used by pause menu Restart).
+void gameplay_reload_level(GameState *state, int screen_w, int screen_h);
+
+// Load a specific level by index (used by pause menu Main Menu → level 0).
+void gameplay_load_level(GameState *state, int index, int screen_w, int screen_h);

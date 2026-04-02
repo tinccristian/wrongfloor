@@ -103,3 +103,15 @@ void gameplay_cleanup(GameState *state)
     audio_cleanup(&state->audio);
     // EffectsSystem holds no GPU resources — vectors free themselves.
 }
+
+void gameplay_reload_level(GameState *state, int screen_w, int screen_h)
+{
+    player_cleanup(&state->player);
+    load_level(state, state->current_level, screen_w, screen_h);
+}
+
+void gameplay_load_level(GameState *state, int index, int screen_w, int screen_h)
+{
+    player_cleanup(&state->player);
+    load_level(state, index, screen_w, screen_h);
+}

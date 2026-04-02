@@ -19,6 +19,7 @@ void audio_init(AudioState *a)
     a->snd_run    = LoadSound(assets_path("sounds/run.mp3").c_str());
     a->snd_land   = LoadSound(assets_path("sounds/land.mp3").c_str());
     a->snd_attack = LoadSound(assets_path("sounds/attack.mp3").c_str());
+    a->snd_menu   = LoadSound(assets_path("sounds/menu.mp3").c_str());
 }
 
 void audio_cleanup(AudioState *a)
@@ -27,6 +28,7 @@ void audio_cleanup(AudioState *a)
     UnloadSound(a->snd_run);
     UnloadSound(a->snd_land);
     UnloadSound(a->snd_attack);
+    UnloadSound(a->snd_menu);
     CloseAudioDevice();
 }
 

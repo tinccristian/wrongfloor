@@ -32,9 +32,7 @@ struct GameState {
     // Level cycling: current level index (0 = level_01, 1 = level_02)
     int current_level = 0;
 
-    // FUTURE: to add pause/menu/game-over states, introduce an AppState enum here
-    // (e.g. APP_PLAYING, APP_PAUSED, APP_MENU) and gate gameplay_update/draw behind it.
-    // gameplay_update already receives input_blocked; a similar flag could gate drawing.
+    bool paused = false;
 };
 
 // Level file names (relative to assets root — prepend via assets_path())

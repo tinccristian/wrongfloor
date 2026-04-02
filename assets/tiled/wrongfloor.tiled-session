@@ -1,5 +1,5 @@
 {
-    "activeFile": "D:/dev/gitHub/wrongfloor/assets/level_02.tmj",
+    "activeFile": "D:/dev/gitHub/wrongfloor/assets/levels/level_02.tmj",
     "expandedProjectPaths": [
     ],
     "fileStates": {
@@ -10,24 +10,35 @@
             "scale": 1,
             "selectedLayer": 1,
             "viewCenter": {
-                "x": 681.5,
-                "y": 281
+                "x": 675,
+                "y": 368.5
             }
         },
         "D:/dev/gitHub/wrongfloor/assets/level_02.tmj": {
             "scale": 1.3396484375,
             "selectedLayer": 0,
             "viewCenter": {
-                "x": 640.0933080623997,
-                "y": 368.00699810467995
+                "x": 639.7200758128007,
+                "y": 367.6337658550809
             }
         },
         "D:/dev/gitHub/wrongfloor/assets/levels/level_01.tmj": {
-            "scale": 1.2494565217391305,
+            "expandedObjectLayers": [
+                7
+            ],
+            "scale": 1,
+            "selectedLayer": 1,
+            "viewCenter": {
+                "x": 681.5,
+                "y": 281
+            }
+        },
+        "D:/dev/gitHub/wrongfloor/assets/levels/level_02.tmj": {
+            "scale": 1.3396484375,
             "selectedLayer": 0,
             "viewCenter": {
-                "x": 639.8782079164855,
-                "y": 368.16006959547633
+                "x": 640.0933080623997,
+                "y": 368.00699810467995
             }
         },
         "D:/dev/gitHub/wrongfloor/assets/levels/tiled/tiles.tsx": {
@@ -68,16 +79,17 @@
     "map.width": 40,
     "openFiles": [
         "tiles.tsx",
-        "D:/dev/gitHub/wrongfloor/assets/level_01.tmj",
-        "D:/dev/gitHub/wrongfloor/assets/level_02.tmj"
+        "D:/dev/gitHub/wrongfloor/assets/levels/level_01.tmj",
+        "D:/dev/gitHub/wrongfloor/assets/levels/level_02.tmj"
     ],
     "project": "wrongfloor.tiled-project",
     "recentFiles": [
         "tiles.tsx",
+        "D:/dev/gitHub/wrongfloor/assets/levels/level_01.tmj",
+        "D:/dev/gitHub/wrongfloor/assets/levels/level_02.tmj",
         "D:/dev/gitHub/wrongfloor/assets/level_01.tmj",
         "D:/dev/gitHub/wrongfloor/assets/level_02.tmj",
-        "map1.tmx",
-        "D:/dev/gitHub/wrongfloor/assets/levels/level_01.tmj"
+        "map1.tmx"
     ],
     "tileset.lastUsedFormat": "tsx"
 }
