@@ -368,15 +368,15 @@ void debug_draw_world(const DebugState *d, const GameState *state)
     // ── Weapon info overlays ──────────────────────────────────────────
     if (d->show_weapon_info)
     {
-        for (const auto& w : state->weapons.weapons)
+        for (const auto& w_ptr : state->weapons.weapons)
         {
-            if (!w.data) continue;
+            const Weapon& w = *w_ptr;
             Vector2 pos = w.is_held ? w.render_pos : w.position;
             const char *status = w.is_held ? "HELD" : (w.is_thrown ? "THROWN" : "GROUND");
             char info[128];
-            snprintf(info, sizeof(info), "%s %d/%d %s%s",
-                     w.data->name.c_str(),
-                     w.current_ammo, w.data->magazine_size,
+            snprintf(info, sizeof(info), "%.*s %d/%d %s%s",
+                     (int)w.type_name().size(), w.type_name().data(),
+                     w.current_ammo, w.magazine_size(),
                      status, w.is_reloading ? " RELOAD" : "");
             DrawText(info, (int)pos.x - 30 + 1, (int)pos.y - 22 + 1, 10, BLACK);
             DrawText(info, (int)pos.x - 30,     (int)pos.y - 22,     10, Color{255, 255, 100, 220});
@@ -384,8 +384,8 @@ void debug_draw_world(const DebugState *d, const GameState *state)
             if (w.is_held)
             {
                 float bar_w = 30.0f;
-                float fill  = (w.data->fire_rate > 0.0f)
-                    ? std::max(0.0f, 1.0f - w.fire_cooldown_timer * w.data->fire_rate)
+                float fill  = (w.fire_rate() > 0.0f)
+                    ? std::max(0.0f, 1.0f - w.fire_cooldown_timer * w.fire_rate())
                     : 1.0f;
                 int bx = (int)pos.x - 15;
                 int by = (int)pos.y + 10;

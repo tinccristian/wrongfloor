@@ -7,7 +7,7 @@
 #include "audio.h"
 #include "enemy.h"
 #include "effects.h"
-#include "weapon.h"
+#include "weapon_manager.h"
 #include <string>
 
 // Returns the base asset directory: the source folder in dev builds (instant
