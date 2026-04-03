@@ -424,3 +424,36 @@ bool weapons_player_has_weapon(const WeaponManager *wm)
         if (w->is_held) return true;
     return false;
 }
+
+void weapons_save_held(WeaponManager *wm)
+{
+    wm->held_save = {};
+    for (const auto& w : wm->weapons)
+    {
+        if (!w->is_held) continue;
+        wm->held_save.type_name   = std::string(w->type_name());
+        wm->held_save.current_ammo = w->current_ammo;
+        wm->held_save.is_reloading = w->is_reloading;
+        wm->held_save.reload_timer = w->reload_timer;
+        wm->held_save.valid        = true;
+        break;
+    }
+}
+
+void weapons_restore_held(WeaponManager *wm)
+{
+    if (!wm->held_save.valid) return;
+
+    int idx = weapons_spawn(wm, wm->held_save.type_name, {0.0f, 0.0f});
+    if (idx >= 0)
+    {
+        Weapon& w       = *wm->weapons[idx];
+        w.is_held       = true;
+        w.is_on_ground  = false;
+        w.current_ammo  = wm->held_save.current_ammo;
+        w.is_reloading  = wm->held_save.is_reloading;
+        w.reload_timer  = wm->held_save.reload_timer;
+    }
+
+    wm->held_save = {};
+}

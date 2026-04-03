@@ -12,6 +12,16 @@
 struct WeaponManager {
     std::vector<std::unique_ptr<Weapon>> weapons;
     bool trigger_was_pressed = false;  // tracks controller right-trigger edge
+
+    // Cached state for cross-level persistence. Populated by weapons_save_held,
+    // consumed and cleared by weapons_restore_held.
+    struct HeldSave {
+        std::string type_name;
+        int   current_ammo = 0;
+        bool  is_reloading = false;
+        float reload_timer = 0.0f;
+        bool  valid        = false;
+    } held_save;
 };
 
 // Initialise the system. Currently a no-op — weapons are spawned on level load.
@@ -52,3 +62,10 @@ void weapons_cleanup(WeaponManager *wm);
 
 // True if the player currently holds any weapon.
 bool weapons_player_has_weapon(const WeaponManager *wm);
+
+// Save the held weapon's type and ammo into wm->held_save. Call before weapons_clear.
+void weapons_save_held(WeaponManager *wm);
+
+// If wm->held_save is valid, spawn that weapon as held with preserved ammo/reload state.
+// Clears held_save after restoring. Call after weapons_load_from_tilemap.
+void weapons_restore_held(WeaponManager *wm);

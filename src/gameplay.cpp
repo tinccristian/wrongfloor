@@ -42,7 +42,9 @@ static void update_level_transition(GameState *state, int screen_w, int screen_h
     {
         int next = (state->current_level + 1) % LEVEL_COUNT;
         player_cleanup(&state->player);
+        weapons_save_held(&state->weapons);
         load_level(state, next, screen_w, screen_h);
+        weapons_restore_held(&state->weapons);
     }
 }
 
