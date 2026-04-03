@@ -22,6 +22,7 @@ public:
     float            bullet_speed()   const override { return 900.0f; }
     int              bullet_damage()  const override { return 1; }
     float            spread_angle()   const override { return 4.0f; }  // degrees
+    int              initial_reserve() const override { return 90; }   // 3 full mags
     bool             is_auto_fire()   const override { return true; }
 
     const Texture2D& texture()         const override { return texture_; }

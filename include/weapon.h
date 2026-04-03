@@ -57,6 +57,13 @@ public:
     virtual float            spread_angle()   const = 0;   // degrees, half-width
     virtual bool             is_auto_fire()   const = 0;   // hold vs press to fire
 
+    // Starting reserve pool (ammo outside the magazine). Set once when spawned;
+    // depleted by reloads. Weapon cannot reload when reserve reaches 0.
+    virtual int initial_reserve() const = 0;
+
+    // Visual recoil kick in px per shot. Override for heavier-feeling guns.
+    virtual float recoil_distance() const { return 4.0f; }
+
     // Defaults that most weapons share; override if needed.
     virtual int  projectile_count() const { return 1; }    // >1 for shotguns
     virtual bool is_throwable()     const { return true; }
@@ -77,7 +84,8 @@ public:
 
     // ── Shared runtime state (driven by WeaponManager) ────────────────
     Vector2 position{};             // world-space center (when not held)
-    int     current_ammo = 0;
+    int     current_ammo  = 0;     // rounds in magazine
+    int     reserve_ammo  = 0;     // rounds outside magazine; depleted by reloads
 
     bool  is_held      = false;
     bool  is_on_ground = true;

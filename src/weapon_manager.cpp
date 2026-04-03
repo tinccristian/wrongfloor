@@ -1,5 +1,6 @@
 #include "weapon_manager.h"
 #include "assault_rifle.h"
+#include "deagle.h"
 #include "raymath.h"
 #include <algorithm>
 #include <cmath>
@@ -13,7 +14,7 @@ static constexpr float THROW_STOP_SPEED = 10.0f;
 static constexpr float BOB_SPEED        = 2.5f;
 static constexpr float BOB_AMPLITUDE    = 2.0f;
 static constexpr float ROT_LERP_SPEED   = 18.0f;
-static constexpr float RECOIL_DIST      = 4.0f;
+// RECOIL_DIST removed — each weapon reports its own recoil_distance().
 static constexpr float RECOIL_DECAY     = 12.0f;
 static constexpr float SIDE_OFFSET      = 6.0f;
 static constexpr float RELOAD_BAR_W     = 32.0f;
@@ -97,6 +98,8 @@ static std::unique_ptr<Weapon> create_weapon(std::string_view type_name)
 {
     if (type_name == "assault_riffle")
         return std::make_unique<AssaultRifle>();
+    if (type_name == "deagle")
+        return std::make_unique<Deagle>();
     return nullptr;
 }
 
@@ -116,6 +119,7 @@ int weapons_spawn(WeaponManager *wm, std::string_view type_name, Vector2 positio
 
     weapon->position     = position;
     weapon->current_ammo = weapon->magazine_size();
+    weapon->reserve_ammo = weapon->initial_reserve();
     weapon->is_on_ground = true;
 
     wm->weapons.push_back(std::move(weapon));
@@ -276,7 +280,11 @@ void weapons_update(WeaponManager *wm, BulletSystem *bullets, AudioState *audio,
             {
                 held->is_reloading = false;
                 held->reload_timer = 0.0f;
-                held->current_ammo = held->magazine_size();
+                // Pull from reserve to top off the magazine.
+                int needed   = held->magazine_size() - held->current_ammo;
+                int transfer = std::min(needed, held->reserve_ammo);
+                held->current_ammo += transfer;
+                held->reserve_ammo -= transfer;
             }
         }
 
@@ -301,13 +309,13 @@ void weapons_update(WeaponManager *wm, BulletSystem *bullets, AudioState *audio,
 
                     held->current_ammo--;
                     held->fire_cooldown_timer = 1.0f / held->fire_rate();
-                    held->recoil_offset      += RECOIL_DIST;
+                    held->recoil_offset      += held->recoil_distance();
 
                     held->play_shot_sound(audio->master_volume, audio->sfx_volume);
                 }
-                else if (!held->is_reloading)
+                else if (!held->is_reloading && held->reserve_ammo > 0)
                 {
-                    // Auto-reload on empty magazine.
+                    // Auto-reload on empty magazine (only if reserve available).
                     held->is_reloading = true;
                     held->reload_timer = held->reload_time();
                     held->play_reload_sound(audio->master_volume, audio->sfx_volume);
@@ -320,7 +328,8 @@ void weapons_update(WeaponManager *wm, BulletSystem *bullets, AudioState *audio,
                 IsGamepadButtonPressed(GAMEPAD_ID, GAMEPAD_BUTTON_RIGHT_FACE_LEFT);
 
             if (reload_pressed && !held->is_reloading &&
-                held->current_ammo < held->magazine_size())
+                held->current_ammo < held->magazine_size() &&
+                held->reserve_ammo > 0)
             {
                 held->is_reloading = true;
                 held->reload_timer = held->reload_time();
@@ -398,7 +407,7 @@ void weapons_draw_ammo_screen(const WeaponManager *wm, int screen_w, int screen_
         if (!w->is_held) continue;
 
         char ammo_buf[32];
-        snprintf(ammo_buf, sizeof(ammo_buf), "%d / %d", w->current_ammo, w->magazine_size());
+        snprintf(ammo_buf, sizeof(ammo_buf), "%d / %d", w->current_ammo, w->reserve_ammo);
 
         const int font_size = 18;
         const int margin    = 16;
@@ -431,8 +440,9 @@ void weapons_save_held(WeaponManager *wm)
     for (const auto& w : wm->weapons)
     {
         if (!w->is_held) continue;
-        wm->held_save.type_name   = std::string(w->type_name());
+        wm->held_save.type_name    = std::string(w->type_name());
         wm->held_save.current_ammo = w->current_ammo;
+        wm->held_save.reserve_ammo = w->reserve_ammo;
         wm->held_save.is_reloading = w->is_reloading;
         wm->held_save.reload_timer = w->reload_timer;
         wm->held_save.valid        = true;
@@ -451,6 +461,7 @@ void weapons_restore_held(WeaponManager *wm)
         w.is_held       = true;
         w.is_on_ground  = false;
         w.current_ammo  = wm->held_save.current_ammo;
+        w.reserve_ammo  = wm->held_save.reserve_ammo;
         w.is_reloading  = wm->held_save.is_reloading;
         w.reload_timer  = wm->held_save.reload_timer;
     }

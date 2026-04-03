@@ -18,6 +18,7 @@ struct WeaponManager {
     struct HeldSave {
         std::string type_name;
         int   current_ammo = 0;
+        int   reserve_ammo = 0;
         bool  is_reloading = false;
         float reload_timer = 0.0f;
         bool  valid        = false;
