@@ -2,7 +2,9 @@
   "permissions": {
     "allow": [
       "Bash(cmake --build build)",
-      "Bash(cmake -B build -G Ninja)"
+      "Bash(cmake -B build -G Ninja)",
+      "Bash(git add:*)",
+      "Bash(git commit -m ':*)"
     ]
   }
 }
