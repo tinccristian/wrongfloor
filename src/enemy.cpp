@@ -2,35 +2,33 @@
 #include "assault_rifle.h"
 #include "deagle.h"
 #include "game.h"
+#include "player.h"   // FacingDirection, SPRITE_SCALE constants
 #include "raymath.h"
 #include <cmath>
 #include <cstdlib>
 
-// ── Sprite constants ──────────────────────────────────────────────────────────
+// ── Sprite / animation constants ──────────────────────────────────────────────
 static constexpr int   ENEMY_FRAME_W      = 16;
 static constexpr int   ENEMY_FRAME_H      = 32;
 static constexpr float ENEMY_SPRITE_SCALE = 3.0f;
+static constexpr int   IDLE_FRAME_COUNT   = 4;
+static constexpr int   RUN_FRAME_COUNT    = 6;
 static const Color     ENEMY_TINT         = { 160, 30, 50, 255 };
 
 // ── AI tuning ─────────────────────────────────────────────────────────────────
 static constexpr float VISION_RANGE       = 250.0f;
-static constexpr float VISION_HALF_ANGLE  = 45.0f;  // degrees, half of 90° cone
+static constexpr float VISION_HALF_ANGLE  = 45.0f;   // degrees, half of 90° cone
 static constexpr float ALERT_DELAY_MIN    = 0.3f;
 static constexpr float ALERT_DELAY_MAX    = 0.5f;
-static constexpr float LOST_SIGHT_TIMEOUT = 2.0f;
-static constexpr float CHASE_SPEED        = 150.0f; // ~68% of player 220 px/s
+static constexpr float CHASE_SPEED        = 185.0f;
 static constexpr float ATTACK_RANGE       = 200.0f;
-static constexpr float EXTRA_SPREAD_DEG   = 12.0f;  // extra inaccuracy for enemy shots
-static constexpr int   BURST_MIN          = 2;
-static constexpr int   BURST_MAX          = 4;
-static constexpr float BURST_PAUSE_MIN    = 0.5f;
-static constexpr float BURST_PAUSE_MAX    = 1.0f;
+static constexpr float EXTRA_SPREAD_DEG   = 12.0f;   // extra inaccuracy per shot
 
 // Weapon orbit rendering — mirrors weapon_manager constants.
-static constexpr float ORBIT_DIST      = 22.0f;
-static constexpr float SIDE_OFFSET     = 6.0f;
-static constexpr float ROT_LERP_SPEED  = 18.0f;
-static constexpr float RECOIL_DECAY    = 12.0f;
+static constexpr float ORBIT_DIST     = 22.0f;
+static constexpr float SIDE_OFFSET    = 6.0f;
+static constexpr float ROT_LERP_SPEED = 18.0f;
+static constexpr float RECOIL_DECAY   = 12.0f;
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -47,18 +45,63 @@ static float lerp_angle(float cur, float target, float speed, float dt)
     return cur + diff * std::min(speed * dt, 1.0f);
 }
 
-// Map a facing string to the sprite-sheet row and horizontal flip flag.
-static void facing_to_row(const std::string& facing, int *out_row, bool *out_flip)
+static Rectangle frame_rect(int col, int row)
 {
-    *out_flip = false;
-    if (facing == "up")    { *out_row = 4; return; }
-    if (facing == "right") { *out_row = 2; return; }
-    if (facing == "left")  { *out_row = 2; *out_flip = true; return; }
-    *out_row = 0; // "down" or unrecognised → front-facing
+    return Rectangle{
+        (float)(col * ENEMY_FRAME_W),
+        (float)(row * ENEMY_FRAME_H),
+        (float)ENEMY_FRAME_W,
+        (float)ENEMY_FRAME_H
+    };
 }
 
-// Returns true if there is a clear line of sight from 'from' to 'to' in the tilemap.
-// Steps along the ray at half-tile intervals.
+static void init_anim(Animation *a, Texture2D *tex, int row, int frame_count,
+                      float frame_dur)
+{
+    a->texture        = tex;
+    a->frame_count    = frame_count;
+    a->frame_duration = frame_dur;
+    a->loops          = true;
+    for (int i = 0; i < frame_count; ++i)
+        a->frames[i] = frame_rect(i, row);
+}
+
+// ── Directional animation selection (mirrors player.cpp logic) ────────────────
+
+struct DirRow { int row; bool flip_h; };
+
+static FacingDirection angle_to_facing(float angle_deg)
+{
+    float a = angle_deg;
+    if (a < 0.0f) a += 360.0f;
+    if (a >= 337.5f || a < 22.5f)  return FACE_RIGHT;
+    if (a < 67.5f)                  return FACE_FRONT_RIGHT;
+    if (a < 112.5f)                 return FACE_FRONT;
+    if (a < 157.5f)                 return FACE_FRONT_LEFT;
+    if (a < 202.5f)                 return FACE_LEFT;
+    if (a < 247.5f)                 return FACE_BACK_LEFT;
+    if (a < 292.5f)                 return FACE_BACK;
+    return FACE_BACK_RIGHT;
+}
+
+static DirRow facing_to_dir_row(FacingDirection fd)
+{
+    switch (fd)
+    {
+        case FACE_FRONT:       return { 0, false };
+        case FACE_FRONT_RIGHT: return { 1, false };
+        case FACE_RIGHT:       return { 2, false };
+        case FACE_BACK_RIGHT:  return { 3, false };
+        case FACE_BACK:        return { 4, false };
+        case FACE_BACK_LEFT:   return { 3, true  };
+        case FACE_LEFT:        return { 2, true  };
+        case FACE_FRONT_LEFT:  return { 1, true  };
+        default:               return { 0, false };
+    }
+}
+
+// ── Vision ────────────────────────────────────────────────────────────────────
+
 static bool has_line_of_sight(const Tilemap *tm, Vector2 from, Vector2 to)
 {
     if (!tm) return true;
@@ -78,47 +121,42 @@ static bool has_line_of_sight(const Tilemap *tm, Vector2 from, Vector2 to)
     return true;
 }
 
-// Returns true if the enemy can currently see the player.
-static bool can_see_player(const Enemy& e, Vector2 player_center, const Tilemap *tm)
+static bool can_see_player(const Enemy& e, Vector2 player_pos, const Tilemap *tm)
 {
-    Vector2 to_player = Vector2Subtract(player_center, e.position);
-    float dist = Vector2Length(to_player);
+    Vector2 to_p = Vector2Subtract(player_pos, e.position);
+    float dist = Vector2Length(to_p);
     if (dist > VISION_RANGE) return false;
 
-    // Angle check: compare to facing_angle.
-    float angle_to_player = atan2f(to_player.y, to_player.x) * RAD2DEG;
-    float diff = angle_to_player - e.facing_angle;
+    float angle_to = atan2f(to_p.y, to_p.x) * RAD2DEG;
+    float diff = angle_to - e.facing_angle;
     while (diff >  180.0f) diff -= 360.0f;
     while (diff < -180.0f) diff += 360.0f;
     if (fabsf(diff) > VISION_HALF_ANGLE) return false;
 
-    return has_line_of_sight(tm, e.position, player_center);
+    return has_line_of_sight(tm, e.position, player_pos);
 }
 
-// Slide-along-wall movement: try full move, then axis components separately.
+// ── Movement ──────────────────────────────────────────────────────────────────
+
 static Vector2 move_with_slide(Vector2 pos, Vector2 delta, const Tilemap *tm)
 {
     if (!tm) return Vector2Add(pos, delta);
-
     auto solid = [&](Vector2 p) {
         int tx = (int)floorf(p.x / (float)TILE_SIZE);
         int ty = (int)floorf(p.y / (float)TILE_SIZE);
         return tilemap_is_solid(tm, tx, ty);
     };
-
     Vector2 full = Vector2Add(pos, delta);
     if (!solid(full)) return full;
-
-    Vector2 slide_x = Vector2Add(pos, { delta.x, 0.0f });
-    if (!solid(slide_x)) return slide_x;
-
-    Vector2 slide_y = Vector2Add(pos, { 0.0f, delta.y });
-    if (!solid(slide_y)) return slide_y;
-
+    Vector2 sx = Vector2Add(pos, { delta.x, 0.0f });
+    if (!solid(sx)) return sx;
+    Vector2 sy = Vector2Add(pos, { 0.0f, delta.y });
+    if (!solid(sy)) return sy;
     return pos;
 }
 
-// Compute muzzle position for the enemy weapon (same math as weapon_manager).
+// ── Weapon helpers ────────────────────────────────────────────────────────────
+
 static Vector2 calc_muzzle(const Enemy& e)
 {
     if (!e.weapon) return e.position;
@@ -131,6 +169,14 @@ static Vector2 calc_muzzle(const Enemy& e)
 void enemies_init(EnemyManager *em)
 {
     em->sprite_sheet = LoadTexture(assets_path("character/idle.png").c_str());
+    em->run_sheet    = LoadTexture(assets_path("character/run.png").c_str());
+
+    for (int row = 0; row < EnemyManager::ANIM_ROW_COUNT; ++row)
+    {
+        init_anim(&em->anim_idle_rows[row], &em->sprite_sheet, row, IDLE_FRAME_COUNT, 0.18f);
+        init_anim(&em->anim_run_rows [row], &em->run_sheet,    row, RUN_FRAME_COUNT,  0.10f);
+    }
+
     em->enemies.clear();
 }
 
@@ -151,9 +197,7 @@ void enemies_load_from_tilemap(EnemyManager *em, const Tilemap *tm)
         auto it = obj.properties.find("facing");
         if (it != obj.properties.end()) facing = it->second;
 
-        facing_to_row(facing, &e.sprite_row, &e.sprite_flip);
-
-        // Set initial facing_angle from the facing string.
+        // Convert facing string to angle.
         if      (facing == "right") e.facing_angle = 0.0f;
         else if (facing == "down")  e.facing_angle = 90.0f;
         else if (facing == "left")  e.facing_angle = 180.0f;
@@ -162,15 +206,21 @@ void enemies_load_from_tilemap(EnemyManager *em, const Tilemap *tm)
 
         e.aim_dir = { cosf(e.facing_angle * DEG2RAD), sinf(e.facing_angle * DEG2RAD) };
 
-        // Assign random weapon (50/50).
+        // Random weapon (50/50).
         if (std::rand() % 2 == 0)
             e.weapon = std::make_unique<AssaultRifle>();
         else
             e.weapon = std::make_unique<Deagle>();
 
-        e.weapon->current_ammo = e.weapon->magazine_size();
-        e.weapon->reserve_ammo = e.weapon->initial_reserve();
-        e.weapon_render_rotation = e.facing_angle;
+        e.weapon->current_ammo     = e.weapon->magazine_size();
+        e.weapon->reserve_ammo     = e.weapon->initial_reserve();
+        e.weapon_render_rotation   = e.facing_angle;
+
+        // Set starting animation from spawn facing.
+        FacingDirection fd = angle_to_facing(e.facing_angle);
+        DirRow          dr = facing_to_dir_row(fd);
+        animation_player_set(&e.anim_player, &em->anim_idle_rows[dr.row]);
+        e.anim_player.flip_h = dr.flip_h;
 
         em->enemies.push_back(std::move(e));
     }
@@ -188,13 +238,14 @@ void enemies_update(EnemyManager *em, BulletSystem *bullets, AudioState *audio,
     {
         if (!e.alive) continue;
 
-        bool sees_player = can_see_player(e, player_center, tm);
-
         // ── State machine ─────────────────────────────────────────────
+        bool is_moving = false;
+
         switch (e.ai_state)
         {
         case EnemyAIState::IDLE:
-            if (sees_player)
+            // Only vision check happens in IDLE — once triggered, never returns.
+            if (can_see_player(e, player_center, tm))
             {
                 e.ai_state   = EnemyAIState::ALERT;
                 e.alert_timer = randf(ALERT_DELAY_MIN, ALERT_DELAY_MAX);
@@ -202,7 +253,7 @@ void enemies_update(EnemyManager *em, BulletSystem *bullets, AudioState *audio,
             break;
 
         case EnemyAIState::ALERT:
-            // Update facing toward player during reaction delay.
+            // Track player during reaction delay (enemy has spotted them).
             {
                 Vector2 to_p = Vector2Subtract(player_center, e.position);
                 if (Vector2LengthSqr(to_p) > 0.01f)
@@ -216,52 +267,56 @@ void enemies_update(EnemyManager *em, BulletSystem *bullets, AudioState *audio,
             {
                 float dist = Vector2Distance(e.position, player_center);
                 e.ai_state = (dist <= ATTACK_RANGE) ? EnemyAIState::ATTACK : EnemyAIState::CHASE;
-                e.lost_sight_timer = 0.0f;
-            }
-            if (!sees_player)
-            {
-                // Lost sight during reaction — back to IDLE.
-                e.ai_state = EnemyAIState::IDLE;
             }
             break;
 
         case EnemyAIState::CHASE:
-            if (sees_player)
+            // Always know where the player is — no lost-sight logic.
             {
-                e.lost_sight_timer = 0.0f;
                 Vector2 to_p = Vector2Subtract(player_center, e.position);
                 float dist = Vector2Length(to_p);
-
                 if (dist > 0.01f)
                 {
-                    e.aim_dir     = Vector2Scale(to_p, 1.0f / dist);
+                    e.aim_dir      = Vector2Scale(to_p, 1.0f / dist);
                     e.facing_angle = atan2f(e.aim_dir.y, e.aim_dir.x) * RAD2DEG;
                 }
-
                 if (dist <= ATTACK_RANGE)
                 {
                     e.ai_state = EnemyAIState::ATTACK;
                 }
                 else
                 {
-                    // Move toward player with wall slide.
                     Vector2 delta = Vector2Scale(e.aim_dir, CHASE_SPEED * dt);
                     e.position = move_with_slide(e.position, delta, tm);
+                    is_moving  = true;
                 }
-            }
-            else
-            {
-                e.lost_sight_timer += dt;
-                if (e.lost_sight_timer >= LOST_SIGHT_TIMEOUT)
-                    e.ai_state = EnemyAIState::IDLE;
+
+                // Fire while chasing — same continuous logic as ATTACK state.
+                e.fire_cooldown -= dt;
+                if (e.fire_cooldown <= 0.0f && e.weapon)
+                {
+                    float base_ang   = atan2f(e.aim_dir.y, e.aim_dir.x);
+                    float extra      = randf(-EXTRA_SPREAD_DEG, EXTRA_SPREAD_DEG) * DEG2RAD;
+                    Vector2 fire_dir = { cosf(base_ang + extra), sinf(base_ang + extra) };
+
+                    e.weapon->fire(bullets, calc_muzzle(e), fire_dir, BulletOwner::ENEMY);
+                    e.weapon->play_shot_sound(audio->master_volume, audio->sfx_volume);
+                    e.weapon_recoil_offset += e.weapon->recoil_distance();
+
+                    e.weapon->current_ammo--;
+                    if (e.weapon->current_ammo <= 0)
+                        e.weapon->current_ammo = e.weapon->magazine_size();
+
+                    e.fire_cooldown = (e.weapon->fire_rate() > 0.0f)
+                        ? 1.0f / e.weapon->fire_rate()
+                        : 0.15f;
+                }
             }
             break;
 
         case EnemyAIState::ATTACK:
-            if (sees_player)
+            // Always know where the player is — no lost-sight logic.
             {
-                e.lost_sight_timer = 0.0f;
-                // Track aim toward player.
                 Vector2 to_p = Vector2Subtract(player_center, e.position);
                 float dist = Vector2Length(to_p);
                 if (dist > 0.01f)
@@ -269,60 +324,32 @@ void enemies_update(EnemyManager *em, BulletSystem *bullets, AudioState *audio,
                     e.aim_dir     = Vector2Scale(to_p, 1.0f / dist);
                     e.facing_angle = atan2f(e.aim_dir.y, e.aim_dir.x) * RAD2DEG;
                 }
-
                 if (dist > ATTACK_RANGE * 1.2f)
                 {
                     e.ai_state = EnemyAIState::CHASE;
                     break;
                 }
 
-                // Burst fire logic.
-                if (e.burst_remaining > 0)
+                // Continuous fire on weapon cooldown — same pattern as player auto-fire.
+                e.fire_cooldown -= dt;
+                if (e.fire_cooldown <= 0.0f && e.weapon)
                 {
-                    e.fire_cooldown -= dt;
-                    if (e.fire_cooldown <= 0.0f && e.weapon)
-                    {
-                        // Apply extra spread on top of weapon's own spread.
-                        float base_ang = atan2f(e.aim_dir.y, e.aim_dir.x);
-                        float extra    = (randf(-EXTRA_SPREAD_DEG, EXTRA_SPREAD_DEG)) * DEG2RAD;
-                        float ang      = base_ang + extra;
-                        Vector2 fire_dir = { cosf(ang), sinf(ang) };
+                    float base_ang = atan2f(e.aim_dir.y, e.aim_dir.x);
+                    float extra    = randf(-EXTRA_SPREAD_DEG, EXTRA_SPREAD_DEG) * DEG2RAD;
+                    Vector2 fire_dir = { cosf(base_ang + extra), sinf(base_ang + extra) };
 
-                        Vector2 muzzle = calc_muzzle(e);
-                        e.weapon->fire(bullets, muzzle, fire_dir, BulletOwner::ENEMY);
-                        e.weapon->play_shot_sound(audio->master_volume, audio->sfx_volume);
+                    e.weapon->fire(bullets, calc_muzzle(e), fire_dir, BulletOwner::ENEMY);
+                    e.weapon->play_shot_sound(audio->master_volume, audio->sfx_volume);
+                    e.weapon_recoil_offset += e.weapon->recoil_distance();
 
-                        e.weapon_recoil_offset += e.weapon->recoil_distance();
-                        e.weapon->current_ammo--;
-                        if (e.weapon->current_ammo <= 0)
-                        {
-                            // Instant reload for enemies.
-                            e.weapon->current_ammo = e.weapon->magazine_size();
-                        }
+                    e.weapon->current_ammo--;
+                    if (e.weapon->current_ammo <= 0)
+                        e.weapon->current_ammo = e.weapon->magazine_size(); // instant reload
 
-                        e.burst_remaining--;
-                        e.fire_cooldown = (e.weapon->fire_rate() > 0.0f)
-                            ? 1.0f / e.weapon->fire_rate()
-                            : 0.15f;
-                    }
+                    e.fire_cooldown = (e.weapon->fire_rate() > 0.0f)
+                        ? 1.0f / e.weapon->fire_rate()
+                        : 0.15f;
                 }
-                else
-                {
-                    // Between bursts.
-                    e.burst_timer -= dt;
-                    if (e.burst_timer <= 0.0f)
-                    {
-                        e.burst_remaining = BURST_MIN + std::rand() % (BURST_MAX - BURST_MIN + 1);
-                        e.burst_timer     = randf(BURST_PAUSE_MIN, BURST_PAUSE_MAX);
-                        e.fire_cooldown   = 0.0f;
-                    }
-                }
-            }
-            else
-            {
-                e.lost_sight_timer += dt;
-                if (e.lost_sight_timer >= LOST_SIGHT_TIMEOUT)
-                    e.ai_state = EnemyAIState::IDLE;
             }
             break;
 
@@ -330,8 +357,18 @@ void enemies_update(EnemyManager *em, BulletSystem *bullets, AudioState *audio,
             break;
         }
 
-        // ── Weapon orbit render state update ──────────────────────────
-        if (e.weapon && e.alive)
+        // ── Directional animation ─────────────────────────────────────
+        FacingDirection fd = angle_to_facing(e.facing_angle);
+        DirRow          dr = facing_to_dir_row(fd);
+        const Animation *next = is_moving
+            ? &em->anim_run_rows [dr.row]
+            : &em->anim_idle_rows[dr.row];
+        animation_player_set(&e.anim_player, next);
+        e.anim_player.flip_h = dr.flip_h;
+        animation_player_update(&e.anim_player, dt);
+
+        // ── Weapon orbit render state ─────────────────────────────────
+        if (e.weapon)
         {
             float target_rot = atan2f(e.aim_dir.y, e.aim_dir.x) * RAD2DEG;
             e.weapon_render_rotation = lerp_angle(
@@ -345,31 +382,19 @@ void enemies_update(EnemyManager *em, BulletSystem *bullets, AudioState *audio,
                 e.position.y + sinf(r) * ORBIT_DIST + perp.y * SIDE_OFFSET
                     - e.aim_dir.y * e.weapon_recoil_offset
             };
-
             e.weapon_recoil_offset -= e.weapon_recoil_offset * RECOIL_DECAY * dt;
             if (e.weapon_recoil_offset < 0.05f) e.weapon_recoil_offset = 0.0f;
         }
-
-        // Update sprite flip to match aim direction.
-        float norm = fmodf(e.facing_angle, 360.0f);
-        if (norm < 0.0f) norm += 360.0f;
-        if (e.ai_state != EnemyAIState::IDLE)
-            e.sprite_flip = (norm > 90.0f && norm < 270.0f);
     }
 }
 
 void enemies_draw(const EnemyManager *em)
 {
-    if (em->sprite_sheet.id == 0) return;
-
-    float fw = (float)ENEMY_FRAME_W * ENEMY_SPRITE_SCALE;
-    float fh = (float)ENEMY_FRAME_H * ENEMY_SPRITE_SCALE;
-
     for (const auto& e : em->enemies)
     {
         if (!e.alive) continue;
 
-        // Draw weapon behind/in-front based on aim angle (simple: always draw first).
+        // ── Weapon ────────────────────────────────────────────────────
         if (e.weapon)
         {
             float sw = (float)e.weapon->sprite_width()  * e.weapon->render_scale();
@@ -383,23 +408,25 @@ void enemies_draw(const EnemyManager *em)
                 (float)e.weapon->sprite_width(),
                 flip ? -(float)e.weapon->sprite_height() : (float)e.weapon->sprite_height() };
             Rectangle dst = { e.weapon_render_pos.x, e.weapon_render_pos.y - sh * 0.5f, sw, sh };
-            Vector2   org = { 0.0f, sh * 0.5f };
-            DrawTexturePro(e.weapon->texture(), src, dst, org, e.weapon_render_rotation, WHITE);
+            DrawTexturePro(e.weapon->texture(), src, dst, { 0.0f, sh * 0.5f },
+                           e.weapon_render_rotation, WHITE);
         }
 
-        // Draw enemy sprite.
-        Rectangle src = {
-            0.0f,
-            (float)(e.sprite_row * ENEMY_FRAME_H),
-            e.sprite_flip ? -(float)ENEMY_FRAME_W : (float)ENEMY_FRAME_W,
-            (float)ENEMY_FRAME_H
-        };
+        // ── Sprite (animated, with enemy tint) ───────────────────────
+        if (!e.anim_player.current) continue;
+
+        Rectangle source = e.anim_player.current->frames[e.anim_player.frame_index];
+        if (e.anim_player.flip_h) source.width = -source.width;
+
+        float fw = (float)ENEMY_FRAME_W * ENEMY_SPRITE_SCALE;
+        float fh = (float)ENEMY_FRAME_H * ENEMY_SPRITE_SCALE;
         Rectangle dst = {
             e.position.x - fw * 0.5f,
             e.position.y - fh * 0.5f,
             fw, fh
         };
-        DrawTexturePro(em->sprite_sheet, src, dst, Vector2{ 0.0f, 0.0f }, 0.0f, ENEMY_TINT);
+        DrawTexturePro(*e.anim_player.current->texture, source, dst,
+                       { 0.0f, 0.0f }, 0.0f, ENEMY_TINT);
     }
 }
 
@@ -416,6 +443,8 @@ Rectangle enemy_hitbox_rect(const Enemy *enemy)
 void enemies_cleanup(EnemyManager *em)
 {
     if (em->sprite_sheet.id != 0) UnloadTexture(em->sprite_sheet);
+    if (em->run_sheet.id     != 0) UnloadTexture(em->run_sheet);
     em->sprite_sheet = Texture2D{};
+    em->run_sheet    = Texture2D{};
     em->enemies.clear(); // unique_ptr weapons destroyed here
 }

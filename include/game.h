@@ -37,7 +37,12 @@ struct GameState {
     int current_level = 0;
 
     bool paused      = false;
-    bool player_dead = false;  // true while death replay sequence is running
+    bool player_dead = false;  // true while slow-mo or replay is running
+
+    // Slow-motion: gameplay dt is multiplied by time_scale after a death hit.
+    // main.cpp drives death_slowmo_timer in real time; resets to 1.0 after transition.
+    float time_scale          = 1.0f;
+    float death_slowmo_timer  = 0.0f;
 };
 
 // Level file names (relative to assets root — prepend via assets_path())

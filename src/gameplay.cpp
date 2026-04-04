@@ -22,6 +22,8 @@ static void load_level(GameState *state, int index, int screen_w, int screen_h)
 
     // Fresh level footage — discard replay buffer so old frames can't leak in.
     replay_reset_buffer(&state->replay);
+    state->time_scale         = 1.0f;
+    state->death_slowmo_timer = 0.0f;
 }
 
 static void update_audio(const PlayerSoundTriggers& triggers, GameState *state)
@@ -65,14 +67,24 @@ void gameplay_init(GameState *state, int screen_w, int screen_h)
 
 void gameplay_update(GameState *state, float dt, int screen_w, int screen_h, bool input_blocked)
 {
-    // ── Death replay sequence ─────────────────────────────────────────
-    if (state->player_dead)
+    // ── Replay sequence (GLITCH → REPLAY → BLACKOUT) — driven by real dt ──
+    // (gameplay_update receives scaled dt from main.cpp, but replay is UI-only.
+    //  During replay time_scale == 1.0 so dt == real_dt anyway.)
+    if (replay_is_active(&state->replay))
     {
         if (replay_update(&state->replay, dt))
         {
             state->player_dead = false;
             gameplay_reload_level(state, screen_w, screen_h);
         }
+        return;
+    }
+
+    // ── Slow-motion dead update: effects + bullets only, no input ─────
+    if (state->player_dead)
+    {
+        bullets_update(&state->bullets, dt);  // dt is already scaled by main.cpp
+        effects_update(&state->effects, &state->tilemap, dt);
         return;
     }
 
@@ -87,12 +99,14 @@ void gameplay_update(GameState *state, float dt, int screen_w, int screen_h, boo
                    state->player.aim.direction, input_blocked, dt);
 
     bullets_update(&state->bullets, dt);
-    collision_bullets_vs_enemies(&state->bullets, &state->enemies, &state->effects);
+    collision_bullets_vs_enemies(&state->bullets, &state->enemies, &state->effects,
+                                 &state->weapons);
 
     if (collision_bullets_vs_player(&state->bullets, &state->player, &state->effects))
     {
-        state->player_dead = true;
-        replay_trigger(&state->replay);
+        state->player_dead      = true;
+        state->time_scale       = 0.15f;
+        state->death_slowmo_timer = 0.0f;
         return;
     }
 

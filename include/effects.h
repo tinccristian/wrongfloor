@@ -33,6 +33,12 @@ struct EffectsSystem {
 // (slow trickle for ~1-2 s afterward that pools into a stain).
 void effects_spawn_blood(EffectsSystem *effects, Vector2 position, Vector2 bullet_direction);
 
+// Larger, asymmetric burst for player death: main splatter in bullet direction
+// plus several upward pump jets simulating a heartbeat under pressure.
+// Call once on hit — the fountain system sustains the spray afterward.
+void effects_spawn_player_death_blood(EffectsSystem *effects, Vector2 position,
+                                      Vector2 bullet_direction);
+
 // Advance pixel physics, handle wall settling (via tilemap collision),
 // and emit from active ooze sources. Settled pixels are transferred to stains.
 void effects_update(EffectsSystem *effects, const Tilemap *tm, float dt);

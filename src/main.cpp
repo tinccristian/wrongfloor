@@ -121,7 +121,21 @@ int main(void)
 
     while (!WindowShouldClose())
     {
-        float dt = GetFrameTime();
+        float real_dt = GetFrameTime();
+
+        // Drive death slow-mo timer in real time; trigger replay once 1s has elapsed.
+        static constexpr float SLOWMO_DURATION = 1.0f;
+        if (state.player_dead && !replay_is_active(&state.replay))
+        {
+            state.death_slowmo_timer += real_dt;
+            if (state.death_slowmo_timer >= SLOWMO_DURATION)
+            {
+                state.time_scale = 1.0f;
+                replay_trigger(&state.replay);
+            }
+        }
+
+        float dt = real_dt * state.time_scale;
 
         // ── Debug update (runs first, may consume Escape) ─────────────
         bool input_blocked   = false;
@@ -190,8 +204,9 @@ int main(void)
             gameplay_draw_hud(&state, screenWidth, screenHeight);
         EndTextureMode();
 
-        // Feed capture into replay buffer (only during live play).
-        if (!state.player_dead && !replay_is_active(&state.replay))
+        // Feed capture into replay buffer during live play AND during slow-mo
+        // (so the slow-mo death frames are included in the replay footage).
+        if (!replay_is_active(&state.replay))
             replay_capture_frame(&state.replay);
 
         // ── Draw to screen ────────────────────────────────────────────

@@ -236,6 +236,97 @@ void effects_spawn_blood(EffectsSystem *effects, Vector2 position, Vector2 bulle
     }
 }
 
+void effects_spawn_player_death_blood(EffectsSystem *effects, Vector2 position,
+                                      Vector2 bullet_direction)
+{
+    Vector2 fwd = (Vector2LengthSqr(bullet_direction) > 0.0001f)
+        ? Vector2Normalize(bullet_direction)
+        : Vector2{ 0.0f, 1.0f };
+    float fwd_angle = atan2f(fwd.y, fwd.x);
+    static constexpr float TWO_PI = 6.2831853f;
+
+    // ── Heavy initial splatter in bullet direction ─────────────────────
+    // Wide cone, fast, lots of particles — the entry wound spray.
+    int burst_n = randi(250, 380);
+    int fwd_n   = (int)(burst_n * 0.80f);
+    for (int i = 0; i < burst_n; ++i)
+    {
+        float angle = (i < fwd_n)
+            ? fwd_angle + randf(-1.2f, 1.2f)    // ±70° forward cone
+            : randf(0.0f, TWO_PI);               // 20% fully random scatter
+        Vector2 dir = { cosf(angle), sinf(angle) };
+        if (!try_emit(effects, position, dir,
+                      randf(400.0f, 1100.0f), splatter_color())) break;
+    }
+
+    // ── Spear pixels — fly across the screen, smear on walls ──────────
+    for (int i = 0; i < randi(20, 35); ++i)
+    {
+        float angle = fwd_angle + randf(-0.9f, 0.9f);
+        Vector2 dir = { cosf(angle), sinf(angle) };
+        try_emit(effects, position, dir, randf(900.0f, 1400.0f), splatter_color(), true);
+    }
+
+    // ── Pump jets — upward arcs from heart pressure, 3-5 pulses ───────
+    // Biased upward (negative Y) with randomised lateral drift.
+    // Each jet originates from a slightly different point near the wound.
+    int pump_count = randi(3, 5);
+    for (int p = 0; p < pump_count; ++p)
+    {
+        // Random upward angle: between 200° and 340° (left-to-right overhead arc),
+        // varied per pulse to break symmetry.
+        float pump_angle = randf(3.49f, 5.93f); // 200°–340° in radians
+        Vector2 pump_dir = { cosf(pump_angle), sinf(pump_angle) };
+        Vector2 origin   = {
+            position.x + randf(-8.0f, 8.0f),
+            position.y + randf(-6.0f, 6.0f)
+        };
+        float pump_speed = randf(500.0f, 850.0f);
+        int   jet_n      = randi(18, 30);
+        for (int i = 0; i < jet_n; ++i)
+        {
+            float jitter = randf(-0.35f, 0.35f);
+            float ang    = pump_angle + jitter;
+            Vector2 dir  = { cosf(ang), sinf(ang) };
+            try_emit(effects, origin, dir,
+                     pump_speed * randf(0.6f, 1.0f), splatter_color());
+        }
+    }
+
+    // ── Three fountain sources (longer duration than normal) ───────────
+    // Stagger their positions to simulate pumping from the wound, not a point.
+    for (int i = 0; i < 3; ++i)
+    {
+        FountainSource f;
+        f.position   = {
+            position.x + randf(-5.0f, 5.0f),
+            position.y + randf(-5.0f, 5.0f)
+        };
+        // Each fountain sprays in a slightly different direction for chaos.
+        float fan = fwd_angle + randf(-0.6f, 0.6f);
+        f.direction  = { cosf(fan), sinf(fan) };
+        f.age        = 0.0f;
+        f.emit_timer = 0.0f;
+        s_fountains.push_back(f);
+    }
+
+    // ── Dense ooze sources to form a large blood pool ─────────────────
+    int src_n = randi(30, 45);
+    for (int i = 0; i < src_n; ++i)
+    {
+        OozeSource src;
+        float angle  = randf(0.0f, TWO_PI);
+        float dist   = randf(0.0f, OOZE_SCATTER * 1.5f);
+        src.position      = { position.x + cosf(angle) * dist,
+                              position.y + sinf(angle) * dist };
+        src.age           = 0.0f;
+        src.duration      = randf(3.0f, 5.0f);   // longer than normal death
+        src.emit_timer    = 0.0f;
+        src.emit_interval = randf(OOZE_INTERVAL_MIN, OOZE_INTERVAL_MAX);
+        s_ooze_sources.push_back(src);
+    }
+}
+
 void effects_update(EffectsSystem *effects, const Tilemap *tm, float dt)
 {
     static constexpr float TWO_PI = 6.2831853f;

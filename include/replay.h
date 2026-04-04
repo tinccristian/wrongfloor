@@ -31,12 +31,14 @@ struct ReplaySystem {
     // it is then either blitted to screen or downscaled into the circular buffer.
     RenderTexture2D capture_rt{};
 
-    // VHS post-process shader applied during replay.
+    // VHS post-process shader applied during glitch and replay phases.
     Shader vhs_shader{};
-    int    time_loc  = -1;
+    int    time_loc           = -1;
+    int    glitch_strength_loc = -1;
 
     // Replay sequence state.
-    enum class Phase { NONE, REPLAY, BLACKOUT } phase = Phase::NONE;
+    static constexpr float GLITCH_DUR = 0.35f; // glitch phase before playback starts
+    enum class Phase { NONE, GLITCH, REPLAY, BLACKOUT } phase = Phase::NONE;
     float vhs_time   = 0.0f;  // cumulative time during replay (jitter seed)
     float read_pos   = 0.0f;  // fractional frame index into the play sequence
     int   play_start = 0;     // oldest frame slot index at trigger time

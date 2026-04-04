@@ -10,8 +10,9 @@ void replay_init(ReplaySystem *r, int screen_w, int screen_h)
         r->frames[i] = LoadRenderTexture(ReplaySystem::CAPTURE_W, ReplaySystem::CAPTURE_H);
 
     // NULL vertex shader → raylib's built-in default (passes fragTexCoord, fragColor).
-    r->vhs_shader = LoadShader(nullptr, assets_path("shaders/vhs.fs").c_str());
-    r->time_loc   = GetShaderLocation(r->vhs_shader, "time");
+    r->vhs_shader          = LoadShader(nullptr, assets_path("shaders/vhs.fs").c_str());
+    r->time_loc            = GetShaderLocation(r->vhs_shader, "time");
+    r->glitch_strength_loc = GetShaderLocation(r->vhs_shader, "glitch_strength");
 }
 
 void replay_cleanup(ReplaySystem *r)
@@ -67,13 +68,23 @@ void replay_trigger(ReplaySystem *r)
         : r->write_head;    // buffer full: oldest = the slot we'd write next
     r->read_pos  = 0.0f;
     r->vhs_time  = 0.0f;
-    r->phase     = ReplaySystem::Phase::REPLAY;
+    r->phase     = ReplaySystem::Phase::GLITCH;
 }
 
 bool replay_update(ReplaySystem *r, float dt)
 {
     switch (r->phase)
     {
+    case ReplaySystem::Phase::GLITCH:
+        r->vhs_time += dt;
+        if (r->vhs_time >= ReplaySystem::GLITCH_DUR)
+        {
+            r->phase    = ReplaySystem::Phase::REPLAY;
+            r->vhs_time = 0.0f;
+            r->read_pos = 0.0f;
+        }
+        break;
+
     case ReplaySystem::Phase::REPLAY:
         r->vhs_time += dt;
         r->read_pos += ReplaySystem::REPLAY_SPEED * ReplaySystem::CAPTURE_FPS * dt;
@@ -89,7 +100,7 @@ bool replay_update(ReplaySystem *r, float dt)
         if (r->vhs_time >= ReplaySystem::BLACKOUT_DUR)
         {
             r->phase = ReplaySystem::Phase::NONE;
-            return true;  // sequence complete — caller should reload level
+            return true;
         }
         break;
 
@@ -103,22 +114,33 @@ bool replay_update(ReplaySystem *r, float dt)
 
 void replay_draw(ReplaySystem *r, int screen_w, int screen_h)
 {
-    if (r->phase == ReplaySystem::Phase::BLACKOUT || r->play_count == 0)
+    if (r->phase == ReplaySystem::Phase::BLACKOUT)
     {
         ClearBackground(BLACK);
         return;
     }
 
-    // Clamp read position to valid range.
-    int frame_idx = (int)r->read_pos;
-    if (frame_idx >= r->play_count) frame_idx = r->play_count - 1;
-    int slot = (r->play_start + frame_idx) % ReplaySystem::BUFFER_SIZE;
+    // GLITCH: freeze on the most-recently captured frame with heavy distortion.
+    // REPLAY: step through the buffer at playback speed.
+    int slot = 0;
+    if (r->phase == ReplaySystem::Phase::GLITCH)
+    {
+        slot = (r->write_head - 1 + ReplaySystem::BUFFER_SIZE) % ReplaySystem::BUFFER_SIZE;
+    }
+    else
+    {
+        int frame_idx = (int)r->read_pos;
+        if (frame_idx >= r->play_count) frame_idx = r->play_count - 1;
+        slot = (r->play_start + frame_idx) % ReplaySystem::BUFFER_SIZE;
+    }
+
+    if (r->frame_count == 0)
+    {
+        ClearBackground(BLACK);
+        return;
+    }
 
     const RenderTexture2D& frame = r->frames[slot];
-
-    // The frame slots were written via DrawTexturePro into a render texture, which
-    // already compensates for OpenGL's Y-flip. Drawing them to screen therefore uses
-    // positive source height (no extra flip needed — negative H would invert them).
     Rectangle src = { 0.0f, 0.0f,
         (float)ReplaySystem::CAPTURE_W,
         (float)ReplaySystem::CAPTURE_H };
@@ -126,16 +148,23 @@ void replay_draw(ReplaySystem *r, int screen_w, int screen_h)
 
     ClearBackground(BLACK);
 
-    if (r->vhs_shader.id != 0 && r->time_loc >= 0)
+    // glitch_strength: 3.0 = heavy glitch distortion, 1.0 = normal replay.
+    float glitch_strength = (r->phase == ReplaySystem::Phase::GLITCH) ? 3.0f : 1.0f;
+
+    if (r->vhs_shader.id != 0)
     {
-        SetShaderValue(r->vhs_shader, r->time_loc, &r->vhs_time, SHADER_UNIFORM_FLOAT);
+        if (r->time_loc >= 0)
+            SetShaderValue(r->vhs_shader, r->time_loc,
+                           &r->vhs_time, SHADER_UNIFORM_FLOAT);
+        if (r->glitch_strength_loc >= 0)
+            SetShaderValue(r->vhs_shader, r->glitch_strength_loc,
+                           &glitch_strength, SHADER_UNIFORM_FLOAT);
         BeginShaderMode(r->vhs_shader);
             DrawTexturePro(frame.texture, src, dst, { 0.0f, 0.0f }, 0.0f, WHITE);
         EndShaderMode();
     }
     else
     {
-        // Shader failed to load — draw without effect.
         DrawTexturePro(frame.texture, src, dst, { 0.0f, 0.0f }, 0.0f, WHITE);
     }
 }
