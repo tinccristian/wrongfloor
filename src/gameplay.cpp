@@ -1,5 +1,6 @@
 #include "gameplay.h"
 #include "collision_system.h"
+#include "replay.h"
 
 static void load_level(GameState *state, int index, int screen_w, int screen_h)
 {
@@ -18,6 +19,9 @@ static void load_level(GameState *state, int index, int screen_w, int screen_h)
 
     camera_init(&state->camera, player_center(&state->player), screen_w, screen_h);
     state->current_level = index;
+
+    // Fresh level footage — discard replay buffer so old frames can't leak in.
+    replay_reset_buffer(&state->replay);
 }
 
 static void update_audio(const PlayerSoundTriggers& triggers, GameState *state)
@@ -54,27 +58,21 @@ void gameplay_init(GameState *state, int screen_w, int screen_h)
     bullets_init(&state->bullets);
     enemies_init(&state->enemies);
     weapons_init(&state->weapons);
+    replay_init(&state->replay, screen_w, screen_h);
     // EffectsSystem needs no init — its vectors are default-constructed.
     load_level(state, 0, screen_w, screen_h);
 }
 
-// Seconds from death hit to level restart (freeze + brief pause).
-static constexpr float DEATH_FREEZE_TIME   = 0.2f;
-static constexpr float DEATH_RESTART_DELAY = 0.5f;
-
 void gameplay_update(GameState *state, float dt, int screen_w, int screen_h, bool input_blocked)
 {
-    // ── Death sequence: freeze then restart ──────────────────────────
+    // ── Death replay sequence ─────────────────────────────────────────
     if (state->player_dead)
     {
-        state->death_timer += dt;
-        if (state->death_timer >= DEATH_RESTART_DELAY)
+        if (replay_update(&state->replay, dt))
         {
             state->player_dead = false;
-            state->death_timer = 0.0f;
             gameplay_reload_level(state, screen_w, screen_h);
         }
-        // During death freeze skip all gameplay updates.
         return;
     }
 
@@ -94,8 +92,8 @@ void gameplay_update(GameState *state, float dt, int screen_w, int screen_h, boo
     if (collision_bullets_vs_player(&state->bullets, &state->player, &state->effects))
     {
         state->player_dead = true;
-        state->death_timer = 0.0f;
-        return; // skip rest of frame
+        replay_trigger(&state->replay);
+        return;
     }
 
     effects_update(&state->effects, &state->tilemap, dt);
@@ -148,6 +146,7 @@ void gameplay_cleanup(GameState *state)
     bullets_cleanup(&state->bullets);
     enemies_cleanup(&state->enemies);
     weapons_cleanup(&state->weapons);
+    replay_cleanup(&state->replay);
     tilemap_unload(&state->tilemap);
     audio_cleanup(&state->audio);
     // EffectsSystem holds no GPU resources — vectors free themselves.

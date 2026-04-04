@@ -8,6 +8,7 @@
 #include "enemy.h"
 #include "effects.h"
 #include "weapon_manager.h"
+#include "replay.h"
 #include <string>
 
 // Returns the base asset directory: the source folder in dev builds (instant
@@ -30,15 +31,13 @@ struct GameState {
     EnemyManager  enemies;
     EffectsSystem effects;
     WeaponManager weapons;
+    ReplaySystem  replay;
 
     // Level cycling: current level index (0 = level_01, 1 = level_02)
     int current_level = 0;
 
-    bool paused = false;
-
-    // Player death sequence: freeze briefly, then restart.
-    bool  player_dead       = false;
-    float death_timer       = 0.0f;  // counts up; restart fires at DEATH_RESTART_DELAY
+    bool paused      = false;
+    bool player_dead = false;  // true while death replay sequence is running
 };
 
 // Level file names (relative to assets root — prepend via assets_path())

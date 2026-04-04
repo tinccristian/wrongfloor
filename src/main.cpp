@@ -2,6 +2,7 @@
 #include "game.h"
 #include "gameplay.h"
 #include "pause_menu.h"
+#include "replay.h"
 
 #ifdef DEV_MODE
 #include "debug.h"
@@ -177,18 +178,40 @@ int main(void)
 
         gameplay_prepare_draw(&state);
 
-        // ── Draw ──────────────────────────────────────────────────────
-        BeginDrawing();
+        // ── Render gameplay into capture texture ──────────────────────
+        BeginTextureMode(state.replay.capture_rt);
             ClearBackground(Color{30, 28, 36, 255});
-
             BeginMode2D(state.camera.cam);
                 gameplay_draw_world(&state);
 #ifdef DEV_MODE
                 debug_draw_world(&debug, &state);
 #endif
             EndMode2D();
-
             gameplay_draw_hud(&state, screenWidth, screenHeight);
+        EndTextureMode();
+
+        // Feed capture into replay buffer (only during live play).
+        if (!state.player_dead && !replay_is_active(&state.replay))
+            replay_capture_frame(&state.replay);
+
+        // ── Draw to screen ────────────────────────────────────────────
+        BeginDrawing();
+            if (replay_is_active(&state.replay))
+            {
+                replay_draw(&state.replay, screenWidth, screenHeight);
+            }
+            else
+            {
+                // Blit capture_rt to the backbuffer; negate source height to
+                // flip the render texture's Y-flipped storage to screen orientation.
+                ClearBackground(Color{30, 28, 36, 255});
+                Rectangle src = { 0.0f, 0.0f,
+                    (float)screenWidth, -(float)screenHeight };
+                Rectangle dst = { 0.0f, 0.0f,
+                    (float)screenWidth, (float)screenHeight };
+                DrawTexturePro(state.replay.capture_rt.texture,
+                               src, dst, { 0.0f, 0.0f }, 0.0f, WHITE);
+            }
 
             if (state.paused)
                 pause_menu_draw(&pause_menu, screenWidth, screenHeight);
