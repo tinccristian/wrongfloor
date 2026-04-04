@@ -4,7 +4,11 @@
       "Bash(cmake --build build)",
       "Bash(cmake -B build -G Ninja)",
       "Bash(git add:*)",
-      "Bash(git commit -m ':*)"
+      "Bash(git commit -m ':*)",
+      "Bash(python3 -c ':*)",
+      "Bash(identify d:/dev/gitHub/wrongfloor/assets/guns/melee/saber.png d:/dev/gitHub/wrongfloor/assets/guns/melee/dagger.png)",
+      "Bash(py --version)",
+      "Bash(/c/Python313/python -c ':*)"
     ]
   }
 }
