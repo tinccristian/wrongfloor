@@ -9,7 +9,17 @@
 #include "effects.h"
 #include "weapon_manager.h"
 #include "replay.h"
+#include "settings.h"
 #include <string>
+
+// Game state machine: which screen/mode are we in?
+enum class GameStateMode {
+    MAIN_MENU,        // Start here
+    PLAYING,          // Active gameplay
+    PAUSED,           // Paused during gameplay (pause menu open)
+    OPTIONS_MAIN,     // Options menu from main menu
+    OPTIONS_PAUSE     // Options menu from pause menu
+};
 
 // Returns the base asset directory: the source folder in dev builds (instant
 // iteration), or the build-adjacent "assets/" folder in release builds.
@@ -32,6 +42,10 @@ struct GameState {
     EffectsSystem effects;
     WeaponManager weapons;
     ReplaySystem  replay;
+    Settings      settings;
+
+    // Game state machine
+    GameStateMode mode = GameStateMode::MAIN_MENU;
 
     // Level cycling: current level index (0 = level_01, 1 = level_02)
     int current_level = 0;

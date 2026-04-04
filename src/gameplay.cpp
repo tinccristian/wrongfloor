@@ -56,7 +56,7 @@ static void update_level_transition(GameState *state, int screen_w, int screen_h
 
 void gameplay_init(GameState *state, int screen_w, int screen_h)
 {
-    audio_init(&state->audio);
+    // audio_init is called once in main.cpp before the game loop, not here
     bullets_init(&state->bullets);
     enemies_init(&state->enemies);
     weapons_init(&state->weapons);

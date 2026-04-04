@@ -1,4 +1,4 @@
-#include "pause_menu.h"
+#include "main_menu.h"
 #include "game.h"
 #include <algorithm>
 #include <cmath>
@@ -13,7 +13,6 @@ static constexpr float LEFT_MARGIN_FRAC = 0.37f;   // base x = screen_w * this
 // ── Colour ────────────────────────────────────────────────────────────────────
 static constexpr unsigned char UNSEL_ALPHA = 100;
 static constexpr unsigned char SEL_ALPHA   = 255;
-static const Color OVERLAY_COLOR = { 0, 0, 0, 160 };
 
 // ── Lerp speed ────────────────────────────────────────────────────────────────
 static constexpr float LERP_SPEED = 9.0f;
@@ -26,9 +25,7 @@ static constexpr float CONF_PITCH_MAX = 0.8f;
 static constexpr float CONF_VOL_MULT  = 1.2f;
 
 // ── Shared layout helper ──────────────────────────────────────────────────────
-// Returns the draw rect for item i given its current anim_t.
-// x/y is the top-left of the text; width/height matches the rendered glyph area.
-static Rectangle item_rect(const PauseMenu *menu, int i, int screen_w, int screen_h)
+static Rectangle item_rect(const MainMenu *menu, int i, int screen_w, int screen_h)
 {
     int   count   = (int)menu->items.size();
     float total_h = BASE_FONT_SIZE + (count - 1) * ITEM_SPACING;
@@ -68,19 +65,23 @@ static void play_confirm_sound(AudioState *audio)
 
 // ─────────────────────────────────────────────────────────────────────────────
 
-void pause_menu_init(PauseMenu *menu)
+void main_menu_init(MainMenu *menu)
 {
     menu->items.clear();
     menu->selected = 0;
 
-    for (const char *label : { "RESUME", "RESTART", "OPTIONS", "MAIN MENU", "EXIT" })
+    for (const char *label : { "PLAY", "OPTIONS", "QUIT" })
         menu->items.push_back({ label, 0.0f });
 
-    // Pre-select the first item without animation.
+    // Pre-select the first item
     menu->items[0].anim_t = 1.0f;
+
+    // Load splash background
+    if (menu->splash.id == 0)
+        menu->splash = LoadTexture(assets_path("splash.png").c_str());
 }
 
-PauseAction pause_menu_update(PauseMenu *menu, AudioState *audio, float dt, int screen_w, int screen_h)
+MainMenuAction main_menu_update(MainMenu *menu, AudioState *audio, float dt, int screen_w, int screen_h)
 {
     int count = (int)menu->items.size();
 
@@ -137,11 +138,9 @@ PauseAction pause_menu_update(PauseMenu *menu, AudioState *audio, float dt, int 
         play_confirm_sound(audio);
         switch (menu->selected)
         {
-            case 0: return PauseAction::Resume;
-            case 1: return PauseAction::Restart;
-            case 2: return PauseAction::Options;
-            case 3: return PauseAction::MainMenu;
-            case 4: return PauseAction::Exit;
+            case 0: return MainMenuAction::Play;
+            case 1: return MainMenuAction::Options;
+            case 2: return MainMenuAction::Quit;
             default: break;
         }
     }
@@ -150,40 +149,50 @@ PauseAction pause_menu_update(PauseMenu *menu, AudioState *audio, float dt, int 
     for (int i = 0; i < count; ++i)
     {
         float target = (i == menu->selected) ? 1.0f : 0.0f;
-        float &t = menu->items[i].anim_t;
-        t += (target - t) * LERP_SPEED * dt;
-        t = std::clamp(t, 0.0f, 1.0f);
+        menu->items[i].anim_t += (target - menu->items[i].anim_t) * LERP_SPEED * dt;
     }
 
-    return PauseAction::None;
+    return MainMenuAction::None;
 }
 
-void pause_menu_draw(const PauseMenu *menu, int screen_w, int screen_h)
+void main_menu_draw(const MainMenu *menu, int screen_w, int screen_h)
 {
-    DrawRectangle(0, 0, screen_w, screen_h, OVERLAY_COLOR);
+    // Draw splash background scaled to fill screen
+    float scale_x = (float)screen_w / (float)menu->splash.width;
+    float scale_y = (float)screen_h / (float)menu->splash.height;
+    float scale = std::max(scale_x, scale_y);
 
-    Font font = GetFontDefault();
+    float w = menu->splash.width * scale;
+    float h = menu->splash.height * scale;
+    float x = (screen_w - w) * 0.5f;
+    float y = (screen_h - h) * 0.5f;
 
+    DrawTextureEx(menu->splash, { x, y }, 0.0f, scale, WHITE);
+
+    // Draw semi-transparent overlay
+    DrawRectangle(0, 0, screen_w, screen_h, { 0, 0, 0, 100 });
+
+    // Draw menu items
     int count = (int)menu->items.size();
     for (int i = 0; i < count; ++i)
     {
-        const PauseMenuItem &item = menu->items[i];
-        float t = item.anim_t;
-
+        float t = menu->items[i].anim_t;
         float font_size = BASE_FONT_SIZE + (SEL_FONT_SIZE - BASE_FONT_SIZE) * t;
-        float spacing   = font_size * 0.05f;
-        unsigned char alpha = (unsigned char)(UNSEL_ALPHA + (SEL_ALPHA - UNSEL_ALPHA) * t);
-        Color col = { 255, 255, 255, alpha };
+        float alpha = (unsigned char)(UNSEL_ALPHA + (SEL_ALPHA - UNSEL_ALPHA) * t);
+        float x_offset = SEL_X_OFFSET * t;
+        float spacing = font_size * 0.05f;
 
-        Rectangle r = item_rect(menu, i, screen_w, screen_h);
+        Rectangle rect = item_rect(menu, i, screen_w, screen_h);
+        Color color = Color{ 255, 255, 255, (unsigned char)alpha };
 
-        // Shadow
-        DrawTextEx(font, item.label.c_str(),
-                   { r.x + 2.0f, r.y + 2.0f }, font_size, spacing,
-                   Color{ 0, 0, 0, (unsigned char)(alpha / 2) });
-
-        // Main text
-        DrawTextEx(font, item.label.c_str(),
-                   { r.x, r.y }, font_size, spacing, col);
+        DrawTextEx(GetFontDefault(), menu->items[i].label.c_str(),
+                   { rect.x, rect.y }, font_size, spacing, color);
     }
+}
+
+void main_menu_cleanup(MainMenu *menu)
+{
+    if (menu->splash.id != 0)
+        UnloadTexture(menu->splash);
+    menu->splash = {};
 }

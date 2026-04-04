@@ -6,7 +6,7 @@
 #include <vector>
 
 // Result returned by pause_menu_update each frame.
-enum class PauseAction { None, Resume, Restart, MainMenu, Exit };
+enum class PauseAction { None, Resume, Restart, Options, MainMenu, Exit };
 
 struct PauseMenuItem {
     std::string label;

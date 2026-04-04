@@ -8,7 +8,13 @@
       "Bash(python3 -c ':*)",
       "Bash(identify d:/dev/gitHub/wrongfloor/assets/guns/melee/saber.png d:/dev/gitHub/wrongfloor/assets/guns/melee/dagger.png)",
       "Bash(py --version)",
-      "Bash(/c/Python313/python -c ':*)"
+      "Bash(/c/Python313/python -c ':*)",
+      "Bash(timeout 5 build/wrongfloor.exe)",
+      "Bash(cmake --build build -- -v)",
+      "Bash(timeout 2 ./wrongfloor.exe)",
+      "Read(//d/dev/Users/cris/AppData/Roaming/**)",
+      "Bash(echo \"Exit code: $?\")",
+      "Bash(cmake --build build --clean-first)"
     ]
   }
 }
