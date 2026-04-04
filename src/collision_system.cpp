@@ -48,7 +48,7 @@ void collision_bullets_vs_enemies(BulletSystem *bullets, EnemyManager *enemies,
 
 int collision_melee_vs_enemies(Vector2 origin, Vector2 aim_dir, float range, float width,
                                EnemyManager *enemies, EffectsSystem *effects,
-                               WeaponManager *wm)
+                               WeaponManager *wm, float cone_half_angle)
 {
     if (!enemies) return 0;
 
@@ -57,6 +57,8 @@ int collision_melee_vs_enemies(Vector2 origin, Vector2 aim_dir, float range, flo
     Vector2 fwd    = Vector2Scale(aim_dir, 1.0f / len);
     Vector2 side   = { -fwd.y, fwd.x };
     float   half_w = width * 0.5f;
+    bool    is_cone = cone_half_angle > 0.0f;
+    float   cos_half = is_cone ? cosf(cone_half_angle * DEG2RAD) : 0.0f;
 
     int hits = 0;
     for (Enemy &enemy : enemies->enemies)
@@ -64,16 +66,32 @@ int collision_melee_vs_enemies(Vector2 origin, Vector2 aim_dir, float range, flo
         if (!enemy.alive) continue;
 
         Vector2 to_e  = Vector2Subtract(enemy.position, origin);
-        float   along = Vector2DotProduct(to_e, fwd);
-        float   across = Vector2DotProduct(to_e, side);
+        float   dist  = Vector2Length(to_e);
 
-        if (along >= 0.0f && along <= range && fabsf(across) <= half_w)
+        bool in_hitbox = false;
+        if (is_cone)
+        {
+            // Cone: distance within range AND angle within cone_half_angle of aim.
+            if (dist <= range && dist > 0.0001f)
+            {
+                float cos_angle = Vector2DotProduct(fwd, Vector2Scale(to_e, 1.0f / dist));
+                in_hitbox = (cos_angle >= cos_half);
+            }
+        }
+        else
+        {
+            float along  = Vector2DotProduct(to_e, fwd);
+            float across = Vector2DotProduct(to_e, side);
+            in_hitbox = (along >= 0.0f && along <= range && fabsf(across) <= half_w);
+        }
+
+        if (in_hitbox)
         {
             enemy.alive    = false;
             enemy.ai_state = EnemyAIState::DEAD;
 
-            Vector2 dir = (along > 0.01f || fabsf(across) > 0.01f)
-                ? Vector2Normalize(to_e)
+            Vector2 dir = (dist > 0.01f)
+                ? Vector2Scale(to_e, 1.0f / dist)
                 : fwd;
             effects_spawn_blood(effects, enemy.position, dir);
 

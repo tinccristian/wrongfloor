@@ -24,11 +24,12 @@ public:
     int              initial_reserve() const override { return 0; }
     bool             is_auto_fire()    const override { return false; }  // press per swing
 
-    bool  is_melee()         const override { return true; }
-    float melee_range()      const override { return 95.0f; }  // 2.5x original, starts ahead of orbit
-    float melee_width()      const override { return 100.0f; } // 2.5x, wide arc
-    float swing_duration()   const override { return 0.30f; }  // seconds
-    float swing_peak_angle() const override { return 80.0f; }  // degrees arc
+    bool  is_melee()              const override { return true; }
+    float melee_range()           const override { return 95.0f;  }  // cone radius in px
+    float melee_cone_half_angle() const override { return 50.0f;  }  // ±50° = 100° total cone
+    float melee_origin_offset()   const override { return 14.0f;  }  // 14px extra beyond ORBIT_DIST
+    float swing_duration()        const override { return 0.30f;  }
+    float swing_peak_angle()      const override { return 80.0f;  }
 
     const Texture2D& texture()         const override { return texture_; }
     const Texture2D& outline_texture() const override { return outline_texture_; } // zero-id → runtime fallback

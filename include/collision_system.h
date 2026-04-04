@@ -18,13 +18,14 @@ void collision_bullets_vs_enemies(BulletSystem *bullets, EnemyManager *enemies,
 bool collision_bullets_vs_player(BulletSystem *bullets, const Player *player,
                                  EffectsSystem *effects);
 
-// Check a melee arc against all alive enemies.
-// origin:   player center
-// aim_dir:  normalized aim direction
-// range:    how far in front of origin the hitbox extends (px)
-// width:    total perpendicular width of the hitbox (px)
-// wm:       if non-null, killed enemies drop their weapon into wm as a ground item
+// Check a melee hitbox against all alive enemies.
+// origin:          start of the hitbox (typically player center + orbit offset)
+// aim_dir:         normalized aim direction
+// range:           reach in px (rectangle depth, or cone radius)
+// width:           rectangle perpendicular width (ignored when cone_half_angle > 0)
+// cone_half_angle: if > 0, use a cone: distance <= range AND angle <= this value (degrees)
+// wm:              if non-null, killed enemies drop their weapon into wm as a ground item
 // Returns the number of enemies killed (0 if none hit).
 int collision_melee_vs_enemies(Vector2 origin, Vector2 aim_dir, float range, float width,
                                EnemyManager *enemies, EffectsSystem *effects,
-                               WeaponManager *wm = nullptr);
+                               WeaponManager *wm = nullptr, float cone_half_angle = 0.0f);

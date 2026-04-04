@@ -69,12 +69,14 @@ public:
     virtual bool is_throwable()     const { return true; }
 
     // ── Melee interface — return false/0 for all ranged weapons ──────
-    virtual bool  is_melee()         const { return false; }
-    virtual float melee_range()      const { return 0.0f; }  // hitbox reach in px
-    virtual float melee_width()      const { return 0.0f; }  // hitbox width in px
-    virtual float swing_duration()   const { return 0.0f; }  // seconds, full cycle
-    virtual float swing_peak_angle() const { return 0.0f; }  // degrees arc (saber)
-    virtual float swing_peak_fwd()   const { return 0.0f; }  // px stab offset (dagger)
+    virtual bool  is_melee()             const { return false; }
+    virtual float melee_range()          const { return 0.0f; }  // hitbox reach in px
+    virtual float melee_width()          const { return 0.0f; }  // rectangle width (ignored when cone > 0)
+    virtual float melee_cone_half_angle() const { return 0.0f; }  // degrees; >0 → cone hitbox instead of rect
+    virtual float melee_origin_offset()  const { return 0.0f; }  // extra px beyond ORBIT_DIST for hitbox start
+    virtual float swing_duration()       const { return 0.0f; }  // seconds, full cycle
+    virtual float swing_peak_angle()     const { return 0.0f; }  // degrees arc (saber)
+    virtual float swing_peak_fwd()       const { return 0.0f; }  // px stab offset (dagger)
 
     // ── Lifecycle hooks called by WeaponManager ───────────────────────
     // Called every frame while held (e.g. streaming audio update).

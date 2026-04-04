@@ -324,14 +324,14 @@ void weapons_update(WeaponManager *wm, BulletSystem *bullets, AudioState *audio,
             if (!held->melee_hit_triggered && t >= 0.40f)
             {
                 held->melee_hit_triggered = true;
-                // Start hitbox from the sprite grip (ORBIT_DIST out) so it doesn't
-                // overlap with the player's own position.
+                // Start hitbox from the sprite grip (ORBIT_DIST + per-weapon extra offset).
+                float origin_dist = ORBIT_DIST + held->melee_origin_offset();
                 Vector2 melee_origin = Vector2Add(player_center,
-                    Vector2Scale(aim_direction, ORBIT_DIST));
+                    Vector2Scale(aim_direction, origin_dist));
                 int hits = collision_melee_vs_enemies(
                     melee_origin, aim_direction,
                     held->melee_range(), held->melee_width(),
-                    enemies, effects, wm);
+                    enemies, effects, wm, held->melee_cone_half_angle());
                 if (hits > 0)
                     held->on_melee_hit(hits, audio->master_volume, audio->sfx_volume);
             }

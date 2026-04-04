@@ -425,32 +425,44 @@ void debug_draw_world(const DebugState *d, const GameState *state)
                 DrawRectangle(bx, by, (int)bar_w, 3, Color{50, 50, 50, 200});
                 DrawRectangle(bx, by, (int)(bar_w * fill), 3, Color{255, 200, 50, 220});
 
-                // Melee hitbox: show the arc as a filled rectangle while swinging.
+                // Melee hitbox: show cone or rectangle while swinging.
                 if (w.is_melee() && w.is_swinging && w.melee_hit_triggered)
                 {
                     const Vector2& aim = state->player.aim.direction;
-                    Vector2 fwd  = aim;
-                    Vector2 side = { -fwd.y, fwd.x };
-                    float range  = w.melee_range();
-                    float half   = w.melee_width() * 0.5f;
-                    // Mirror the ORBIT_DIST offset used in weapon_manager.
+                    float aim_deg  = atan2f(aim.y, aim.x) * RAD2DEG;
+                    float range    = w.melee_range();
                     static constexpr float ORBIT_DIST_DBG = 22.0f;
                     Vector2 origin = Vector2Add(player_center(&state->player),
-                                               Vector2Scale(fwd, ORBIT_DIST_DBG));
+                        Vector2Scale(aim, ORBIT_DIST_DBG + w.melee_origin_offset()));
 
-                    // Four corners of the hitbox rectangle.
-                    Vector2 corners[4] = {
-                        Vector2Add(origin, Vector2Scale(side,  half)),
-                        Vector2Add(origin, Vector2Scale(side, -half)),
-                        Vector2Add(Vector2Add(origin, Vector2Scale(fwd, range)), Vector2Scale(side, -half)),
-                        Vector2Add(Vector2Add(origin, Vector2Scale(fwd, range)), Vector2Scale(side,  half)),
-                    };
-                    DrawTriangle(corners[0], corners[1], corners[2], Color{255, 80, 80, 55});
-                    DrawTriangle(corners[0], corners[2], corners[3], Color{255, 80, 80, 55});
-                    DrawLineV(corners[0], corners[3], Color{255, 100, 100, 180});
-                    DrawLineV(corners[1], corners[2], Color{255, 100, 100, 180});
-                    DrawLineV(corners[0], corners[1], Color{255, 100, 100, 180});
-                    DrawLineV(corners[3], corners[2], Color{255, 100, 100, 180});
+                    if (w.melee_cone_half_angle() > 0.0f)
+                    {
+                        float half = w.melee_cone_half_angle();
+                        DrawCircleSector(origin, range,
+                            aim_deg - half, aim_deg + half, 16,
+                            Color{255, 80, 80, 55});
+                        DrawCircleSectorLines(origin, range,
+                            aim_deg - half, aim_deg + half, 16,
+                            Color{255, 110, 110, 180});
+                    }
+                    else
+                    {
+                        Vector2 fwd  = aim;
+                        Vector2 side = { -fwd.y, fwd.x };
+                        float   half = w.melee_width() * 0.5f;
+                        Vector2 corners[4] = {
+                            Vector2Add(origin, Vector2Scale(side,  half)),
+                            Vector2Add(origin, Vector2Scale(side, -half)),
+                            Vector2Add(Vector2Add(origin, Vector2Scale(fwd, range)), Vector2Scale(side, -half)),
+                            Vector2Add(Vector2Add(origin, Vector2Scale(fwd, range)), Vector2Scale(side,  half)),
+                        };
+                        DrawTriangle(corners[0], corners[1], corners[2], Color{255, 80, 80, 55});
+                        DrawTriangle(corners[0], corners[2], corners[3], Color{255, 80, 80, 55});
+                        DrawLineV(corners[0], corners[3], Color{255, 100, 100, 180});
+                        DrawLineV(corners[1], corners[2], Color{255, 100, 100, 180});
+                        DrawLineV(corners[0], corners[1], Color{255, 100, 100, 180});
+                        DrawLineV(corners[3], corners[2], Color{255, 100, 100, 180});
+                    }
                 }
             }
         }
