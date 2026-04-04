@@ -3,14 +3,17 @@
 #include "raylib.h"
 #include <vector>
 
+enum class BulletOwner { PLAYER, ENEMY };
+
 struct Bullet {
-    Vector2 position{};
-    Vector2 velocity{};
-    float   age = 0.0f;
-    float   lifetime = 0.0f;
-    float   frame_timer = 0.0f;
-    int     frame_index = 0;
-    bool    dead = false; // set by collision system; removed at start of next bullets_update
+    Vector2     position{};
+    Vector2     velocity{};
+    float       age = 0.0f;
+    float       lifetime = 0.0f;
+    float       frame_timer = 0.0f;
+    int         frame_index = 0;
+    bool        dead = false; // set by collision system; removed at start of next bullets_update
+    BulletOwner owner = BulletOwner::PLAYER;
 };
 
 struct BulletSystem {
@@ -22,7 +25,9 @@ struct BulletSystem {
 void bullets_init(BulletSystem *system);
 
 // Spawn a bullet travelling in direction from origin at the given speed (px/sec).
-void bullets_spawn(BulletSystem *system, Vector2 origin, Vector2 direction, float speed);
+// owner distinguishes player from enemy bullets for collision filtering.
+void bullets_spawn(BulletSystem *system, Vector2 origin, Vector2 direction, float speed,
+                   BulletOwner owner = BulletOwner::PLAYER);
 
 // Remove all live bullets without unloading the spritesheet.
 void bullets_clear(BulletSystem *system);

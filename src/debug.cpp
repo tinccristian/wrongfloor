@@ -192,6 +192,12 @@ void debug_init(DebugState *d)
             ds->show_weapon_info = !ds->show_weapon_info;
             push_output(ds, std::string("showWeaponInfo: ") + (ds->show_weapon_info ? "ON" : "OFF"));
         });
+
+    debug_register_command(d, "showVisionCones", "Toggle enemy vision cone overlay (yellow=IDLE, red=ALERT/CHASE/ATTACK)",
+        [](DebugState *ds, const std::string&) {
+            ds->show_vision_cones = !ds->show_vision_cones;
+            push_output(ds, std::string("showVisionCones: ") + (ds->show_vision_cones ? "ON" : "OFF"));
+        });
 }
 
 bool debug_update(DebugState *d, float dt)
@@ -345,6 +351,26 @@ void debug_draw_world(const DebugState *d, const GameState *state)
             Rectangle hb = enemy_hitbox_rect(&enemy);
             DrawRectangleRec(hb, Color{255, 50, 50, 50});
             DrawRectangleLinesEx(hb, 1.5f, Color{255, 80, 80, 210});
+        }
+    }
+
+    // ── Enemy vision cones ────────────────────────────────────────────
+    if (d->show_vision_cones)
+    {
+        static constexpr float VISION_RANGE      = 250.0f;
+        static constexpr float VISION_HALF_ANGLE = 45.0f;
+        for (const auto& enemy : state->enemies.enemies)
+        {
+            if (!enemy.alive) continue;
+            bool alert = (enemy.ai_state != EnemyAIState::IDLE);
+            Color cone_color = alert ? Color{255, 50, 50, 60} : Color{255, 220, 50, 45};
+            Color line_color = alert ? Color{255, 80, 80, 180} : Color{255, 220, 80, 140};
+
+            // DrawCircleSector: centre, radius, startAngle, endAngle, segments, color.
+            float start_deg = enemy.facing_angle - VISION_HALF_ANGLE;
+            float end_deg   = enemy.facing_angle + VISION_HALF_ANGLE;
+            DrawCircleSector(enemy.position, VISION_RANGE, start_deg, end_deg, 16, cone_color);
+            DrawCircleSectorLines(enemy.position, VISION_RANGE, start_deg, end_deg, 16, line_color);
         }
     }
 

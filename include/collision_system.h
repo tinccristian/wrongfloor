@@ -3,11 +3,14 @@
 #include "bullets.h"
 #include "enemy.h"
 #include "effects.h"
+#include "player.h"
 
-// Resolve bullet-vs-enemy overlaps for the current frame.
-// Kills each hit enemy (alive = false), marks the bullet dead, and spawns blood.
-// Call after bullets_update and before effects_update.
+// Resolve PLAYER-owned bullet vs enemy overlaps.
+// Kills each hit enemy, marks bullet dead, spawns blood.
 void collision_bullets_vs_enemies(BulletSystem *bullets, EnemyManager *enemies,
                                   EffectsSystem *effects);
 
-// FUTURE: add collision_player_vs_enemies(), collision_enemies_vs_walls(), etc.
+// Resolve ENEMY-owned bullet vs player overlap.
+// Returns true if the player was hit (caller handles death).
+bool collision_bullets_vs_player(BulletSystem *bullets, const Player *player,
+                                 EffectsSystem *effects);

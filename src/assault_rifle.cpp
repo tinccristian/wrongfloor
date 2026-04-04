@@ -34,13 +34,14 @@ AssaultRifle::~AssaultRifle()
     if (outline_texture_.id != 0) UnloadTexture(outline_texture_);
 }
 
-void AssaultRifle::fire(BulletSystem *bullets, Vector2 muzzle, Vector2 aim_dir)
+void AssaultRifle::fire(BulletSystem *bullets, Vector2 muzzle, Vector2 aim_dir,
+                        BulletOwner owner)
 {
     float base = atan2f(aim_dir.y, aim_dir.x);
     float spread = randf(-spread_angle(), spread_angle()) * DEG2RAD;
     float ang = base + spread;
     Vector2 dir = { cosf(ang), sinf(ang) };
-    bullets_spawn(bullets, muzzle, dir, bullet_speed());
+    bullets_spawn(bullets, muzzle, dir, bullet_speed(), owner);
 }
 
 void AssaultRifle::play_shot_sound(float master_vol, float sfx_vol)

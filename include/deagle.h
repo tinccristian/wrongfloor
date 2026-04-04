@@ -30,7 +30,8 @@ public:
     const Texture2D& outline_texture() const override { return outline_texture_; }
 
     // Fires one accurate bullet with tight spread.
-    void fire(BulletSystem *bullets, Vector2 muzzle, Vector2 aim_dir) override;
+    void fire(BulletSystem *bullets, Vector2 muzzle, Vector2 aim_dir,
+              BulletOwner owner = BulletOwner::PLAYER) override;
 
     // Plays a loud, punchy shot sound with slight pitch variation.
     void play_shot_sound(float master_vol, float sfx_vol) override;

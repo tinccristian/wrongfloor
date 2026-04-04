@@ -74,7 +74,9 @@ public:
 
     // Spawn all projectiles for one shot at the given muzzle position.
     // Called by the manager after fire input is confirmed; muzzle is pre-calculated.
-    virtual void fire(BulletSystem *bullets, Vector2 muzzle, Vector2 aim_dir) = 0;
+    // owner is passed through to bullets_spawn for collision filtering.
+    virtual void fire(BulletSystem *bullets, Vector2 muzzle, Vector2 aim_dir,
+                      BulletOwner owner = BulletOwner::PLAYER) = 0;
 
     // Play the shot sound, cycling through aliases to allow overlap.
     virtual void play_shot_sound(float master_vol, float sfx_vol) = 0;

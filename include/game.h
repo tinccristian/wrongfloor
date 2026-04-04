@@ -35,6 +35,10 @@ struct GameState {
     int current_level = 0;
 
     bool paused = false;
+
+    // Player death sequence: freeze briefly, then restart.
+    bool  player_dead       = false;
+    float death_timer       = 0.0f;  // counts up; restart fires at DEATH_RESTART_DELAY
 };
 
 // Level file names (relative to assets root — prepend via assets_path())

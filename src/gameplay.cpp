@@ -58,8 +58,26 @@ void gameplay_init(GameState *state, int screen_w, int screen_h)
     load_level(state, 0, screen_w, screen_h);
 }
 
+// Seconds from death hit to level restart (freeze + brief pause).
+static constexpr float DEATH_FREEZE_TIME   = 0.2f;
+static constexpr float DEATH_RESTART_DELAY = 0.5f;
+
 void gameplay_update(GameState *state, float dt, int screen_w, int screen_h, bool input_blocked)
 {
+    // ── Death sequence: freeze then restart ──────────────────────────
+    if (state->player_dead)
+    {
+        state->death_timer += dt;
+        if (state->death_timer >= DEATH_RESTART_DELAY)
+        {
+            state->player_dead = false;
+            state->death_timer = 0.0f;
+            gameplay_reload_level(state, screen_w, screen_h);
+        }
+        // During death freeze skip all gameplay updates.
+        return;
+    }
+
     Vector2 mouse_world = GetScreenToWorld2D(GetMousePosition(), state->camera.cam);
     PlayerSoundTriggers triggers;
 
@@ -72,8 +90,17 @@ void gameplay_update(GameState *state, float dt, int screen_w, int screen_h, boo
 
     bullets_update(&state->bullets, dt);
     collision_bullets_vs_enemies(&state->bullets, &state->enemies, &state->effects);
+
+    if (collision_bullets_vs_player(&state->bullets, &state->player, &state->effects))
+    {
+        state->player_dead = true;
+        state->death_timer = 0.0f;
+        return; // skip rest of frame
+    }
+
     effects_update(&state->effects, &state->tilemap, dt);
-    enemies_update(&state->enemies, dt);
+    enemies_update(&state->enemies, &state->bullets, &state->audio,
+                   &state->tilemap, player_center(&state->player), dt);
     camera_update(&state->camera, player_center(&state->player), &state->tilemap,
                   screen_w, screen_h, dt);
 
