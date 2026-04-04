@@ -68,6 +68,27 @@ public:
     virtual int  projectile_count() const { return 1; }    // >1 for shotguns
     virtual bool is_throwable()     const { return true; }
 
+    // ── Melee interface — return false/0 for all ranged weapons ──────
+    virtual bool  is_melee()         const { return false; }
+    virtual float melee_range()      const { return 0.0f; }  // hitbox reach in px
+    virtual float melee_width()      const { return 0.0f; }  // hitbox width in px
+    virtual float swing_duration()   const { return 0.0f; }  // seconds, full cycle
+    virtual float swing_peak_angle() const { return 0.0f; }  // degrees arc (saber)
+    virtual float swing_peak_fwd()   const { return 0.0f; }  // px stab offset (dagger)
+
+    // ── Lifecycle hooks called by WeaponManager ───────────────────────
+    // Called every frame while held (e.g. streaming audio update).
+    virtual void update_held(float /*dt*/, float /*master_vol*/, float /*sfx_vol*/) {}
+    // Called once when the player picks up this weapon.
+    virtual void on_pickup(float /*master_vol*/, float /*sfx_vol*/) {}
+    // Called once when the weapon is dropped or thrown.
+    virtual void on_dropped() {}
+    // Called by the manager after melee collision reports >=1 hit.
+    virtual void on_melee_hit(int /*hit_count*/, float /*master_vol*/, float /*sfx_vol*/) {}
+    // Draw extra overlays after the main sprite (e.g. dagger blood pixels).
+    // render_rotation already includes swing_rotation_offset.
+    virtual void draw_overlay(Vector2 /*render_pos*/, float /*render_rotation*/) const {}
+
     // Asset access — textures owned by the subclass.
     virtual const Texture2D& texture()         const = 0;
     virtual const Texture2D& outline_texture() const = 0;
@@ -75,13 +96,14 @@ public:
     // Spawn all projectiles for one shot at the given muzzle position.
     // Called by the manager after fire input is confirmed; muzzle is pre-calculated.
     // owner is passed through to bullets_spawn for collision filtering.
+    // Melee weapons override this as a no-op.
     virtual void fire(BulletSystem *bullets, Vector2 muzzle, Vector2 aim_dir,
                       BulletOwner owner = BulletOwner::PLAYER) = 0;
 
-    // Play the shot sound, cycling through aliases to allow overlap.
+    // Play the shot / attack sound. Melee: plays swing sound.
     virtual void play_shot_sound(float master_vol, float sfx_vol) = 0;
 
-    // Play the reload-start sound.
+    // Play the reload-start sound. Melee: no-op.
     virtual void play_reload_sound(float master_vol, float sfx_vol) = 0;
 
     // ── Shared runtime state (driven by WeaponManager) ────────────────
@@ -103,6 +125,13 @@ public:
     float   recoil_offset   = 0.0f; // px backward kick, lerps to 0
     float   render_rotation = 0.0f; // degrees, lerped toward aim angle
     Vector2 render_pos{};           // computed each frame when held
+
+    // Melee swing animation state (driven by WeaponManager)
+    bool  is_swinging           = false;
+    float swing_timer           = 0.0f;
+    float swing_rotation_offset = 0.0f; // degrees added to render_rotation during swing
+    float melee_forward_offset  = 0.0f; // px forward push during stab swing
+    bool  melee_hit_triggered   = false; // prevents multiple hit checks per swing
 
 protected:
     Weapon() = default;

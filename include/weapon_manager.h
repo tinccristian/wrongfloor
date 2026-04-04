@@ -4,6 +4,9 @@
 #include "tilemap.h"
 #include "bullets.h"
 #include "audio.h"
+#include "effects.h"
+// EnemyManager forward-declared to keep header slim; included in weapon_manager.cpp.
+struct EnemyManager;
 #include <memory>
 #include <string_view>
 #include <vector>
@@ -40,9 +43,11 @@ void weapons_load_from_tilemap(WeaponManager *wm, const Tilemap *tm);
 void weapons_clear(WeaponManager *wm);
 
 // Advance physics, handle pickup/throw/fire/reload input, spawn bullets.
+// enemies and effects are needed for melee hit detection.
 // player_center and aim_direction come directly from the Player struct.
 void weapons_update(WeaponManager *wm, BulletSystem *bullets, AudioState *audio,
-                    const Tilemap *tm, Vector2 player_center, Vector2 aim_direction,
+                    const Tilemap *tm, EnemyManager *enemies, EffectsSystem *effects,
+                    Vector2 player_center, Vector2 aim_direction,
                     bool input_blocked, float dt);
 
 // Draw all ground and thrown weapons with outline and bob.

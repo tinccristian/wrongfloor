@@ -1,6 +1,7 @@
 #include "collision_system.h"
 #include "raymath.h"
 #include <cmath>
+#include <cstdlib>
 
 void collision_bullets_vs_enemies(BulletSystem *bullets, EnemyManager *enemies,
                                   EffectsSystem *effects, WeaponManager *wm)
@@ -43,6 +44,56 @@ void collision_bullets_vs_enemies(BulletSystem *bullets, EnemyManager *enemies,
             }
         }
     }
+}
+
+int collision_melee_vs_enemies(Vector2 origin, Vector2 aim_dir, float range, float width,
+                               EnemyManager *enemies, EffectsSystem *effects,
+                               WeaponManager *wm)
+{
+    if (!enemies) return 0;
+
+    float len = Vector2Length(aim_dir);
+    if (len < 0.0001f) return 0;
+    Vector2 fwd    = Vector2Scale(aim_dir, 1.0f / len);
+    Vector2 side   = { -fwd.y, fwd.x };
+    float   half_w = width * 0.5f;
+
+    int hits = 0;
+    for (Enemy &enemy : enemies->enemies)
+    {
+        if (!enemy.alive) continue;
+
+        Vector2 to_e  = Vector2Subtract(enemy.position, origin);
+        float   along = Vector2DotProduct(to_e, fwd);
+        float   across = Vector2DotProduct(to_e, side);
+
+        if (along >= 0.0f && along <= range && fabsf(across) <= half_w)
+        {
+            enemy.alive    = false;
+            enemy.ai_state = EnemyAIState::DEAD;
+
+            Vector2 dir = (along > 0.01f || fabsf(across) > 0.01f)
+                ? Vector2Normalize(to_e)
+                : fwd;
+            effects_spawn_blood(effects, enemy.position, dir);
+
+            // Drop enemy weapon as a ground item (same logic as bullet kills).
+            if (enemy.weapon && wm)
+            {
+                Weapon *w       = enemy.weapon.get();
+                w->position     = enemy.position;
+                w->is_held      = false;
+                w->is_on_ground = true;
+                w->is_thrown    = false;
+                w->recoil_offset = 0.0f;
+                w->render_rotation = enemy.weapon_render_rotation;
+                wm->weapons.push_back(std::move(enemy.weapon));
+            }
+
+            ++hits;
+        }
+    }
+    return hits;
 }
 
 bool collision_bullets_vs_player(BulletSystem *bullets, const Player *player,

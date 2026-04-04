@@ -1,6 +1,10 @@
 #include "weapon_manager.h"
 #include "assault_rifle.h"
 #include "deagle.h"
+#include "weapons/saber.h"
+#include "weapons/dagger.h"
+#include "enemy.h"
+#include "collision_system.h"
 #include "raymath.h"
 #include <algorithm>
 #include <cmath>
@@ -52,7 +56,8 @@ static bool point_solid(const Tilemap *tm, float wx, float wy)
 // ── Draw helpers ──────────────────────────────────────────────────────────────
 
 // Draw a ground/thrown weapon centered at (cx, cy + bob_y).
-// Uses the outline texture when on the ground (if the subclass provides one).
+// Uses the outline texture when on the ground.  If no outline texture is provided
+// (id == 0), falls back to a runtime 4-pass offset outline in WHITE.
 static void draw_ground_sprite(const Weapon& w, float cx, float cy,
                                 float bob_y, bool use_outline)
 {
@@ -61,14 +66,31 @@ static void draw_ground_sprite(const Weapon& w, float cx, float cy,
     float x  = cx - sw * 0.5f;
     float y  = cy - sh * 0.5f + bob_y;
 
-    bool has_outline = use_outline && (w.outline_texture().id != 0);
-    const Texture2D& tex = has_outline ? w.outline_texture() : w.texture();
-
-    Rectangle src = { 0, 0, (float)tex.width, (float)tex.height };
+    Rectangle src = { 0, 0, (float)w.texture().width, (float)w.texture().height };
     Rectangle dst = { x, y, sw, sh };
     Vector2   org = { 0, 0 };
 
-    DrawTexturePro(tex, src, dst, org, 0.0f, WHITE);
+    bool has_outline_tex = use_outline && (w.outline_texture().id != 0);
+    if (has_outline_tex)
+    {
+        Rectangle osrc = { 0, 0, (float)w.outline_texture().width,
+                                  (float)w.outline_texture().height };
+        DrawTexturePro(w.outline_texture(), osrc, dst, org, 0.0f, WHITE);
+        return;
+    }
+
+    if (use_outline)
+    {
+        // Runtime outline: draw 4 offset copies in semi-transparent white, then the sprite.
+        static const float OFFSETS[4][2] = { {-1,0},{1,0},{0,-1},{0,1} };
+        Color oc = { 255, 255, 255, 160 };
+        for (auto& off : OFFSETS)
+        {
+            Rectangle odst = { x + off[0], y + off[1], sw, sh };
+            DrawTexturePro(w.texture(), src, odst, org, 0.0f, oc);
+        }
+    }
+    DrawTexturePro(w.texture(), src, dst, org, 0.0f, WHITE);
 }
 
 // Draw the held weapon. Pivot at the grip (left/rear end of sprite).
@@ -96,10 +118,10 @@ static void draw_held_sprite(const Weapon& w, Vector2 render_pos, float render_r
 
 static std::unique_ptr<Weapon> create_weapon(std::string_view type_name)
 {
-    if (type_name == "assault_riffle")
-        return std::make_unique<AssaultRifle>();
-    if (type_name == "deagle")
-        return std::make_unique<Deagle>();
+    if (type_name == "assault_riffle") return std::make_unique<AssaultRifle>();
+    if (type_name == "deagle")         return std::make_unique<Deagle>();
+    if (type_name == "saber")          return std::make_unique<Saber>();
+    if (type_name == "dagger")         return std::make_unique<Dagger>();
     return nullptr;
 }
 
@@ -154,7 +176,8 @@ void weapons_clear(WeaponManager *wm)
 }
 
 void weapons_update(WeaponManager *wm, BulletSystem *bullets, AudioState *audio,
-                    const Tilemap *tm, Vector2 player_center, Vector2 aim_direction,
+                    const Tilemap *tm, EnemyManager *enemies, EffectsSystem *effects,
+                    Vector2 player_center, Vector2 aim_direction,
                     bool input_blocked, float dt)
 {
     // ── Find held weapon (at most one) ────────────────────────────────
@@ -210,16 +233,21 @@ void weapons_update(WeaponManager *wm, BulletSystem *bullets, AudioState *audio,
             {
                 if (held)
                 {
-                    held->is_held      = false;
-                    held->is_on_ground = true;
-                    held->position     = player_center;
-                    held->is_reloading = false;
+                    held->is_held             = false;
+                    held->is_on_ground        = true;
+                    held->position            = player_center;
+                    held->is_reloading        = false;
+                    held->is_swinging         = false;
+                    held->swing_rotation_offset = 0.0f;
+                    held->melee_forward_offset  = 0.0f;
+                    held->on_dropped();
                     held = nullptr;
                 }
                 nearest->is_held         = true;
                 nearest->is_on_ground    = false;
                 nearest->render_rotation = atan2f(aim_direction.y, aim_direction.x) * RAD2DEG;
                 held = nearest;
+                held->on_pickup(audio->master_volume, audio->sfx_volume);
             }
         }
 
@@ -230,12 +258,16 @@ void weapons_update(WeaponManager *wm, BulletSystem *bullets, AudioState *audio,
 
         if (throw_pressed && held->is_throwable())
         {
-            held->is_held        = false;
-            held->is_on_ground   = false;
-            held->is_thrown      = true;
-            held->position       = held->render_pos;
-            held->throw_velocity = Vector2Scale(aim_direction, THROW_SPEED);
-            held->is_reloading   = false;
+            held->is_held             = false;
+            held->is_on_ground        = false;
+            held->is_thrown           = true;
+            held->position            = held->render_pos;
+            held->throw_velocity      = Vector2Scale(aim_direction, THROW_SPEED);
+            held->is_reloading        = false;
+            held->is_swinging         = false;
+            held->swing_rotation_offset = 0.0f;
+            held->melee_forward_offset  = 0.0f;
+            held->on_dropped();
             held = nullptr;
         }
     }
@@ -256,12 +288,16 @@ void weapons_update(WeaponManager *wm, BulletSystem *bullets, AudioState *audio,
         float target_rot = atan2f(aim_direction.y, aim_direction.x) * RAD2DEG;
         held->render_rotation = lerp_angle(held->render_rotation, target_rot, ROT_LERP_SPEED, dt);
 
-        // Position: grip at ORBIT_DIST in aim direction, offset perpendicular for visual clarity.
+        // Position: grip at ORBIT_DIST in aim direction; melee stab adds forward offset.
         float r = held->render_rotation * DEG2RAD;
-        Vector2 perp = { -aim_direction.y, aim_direction.x };  // 90° left of aim
+        Vector2 perp = { -aim_direction.y, aim_direction.x };
         held->render_pos = {
-            player_center.x + cosf(r) * ORBIT_DIST + perp.x * SIDE_OFFSET - aim_direction.x * held->recoil_offset,
-            player_center.y + sinf(r) * ORBIT_DIST + perp.y * SIDE_OFFSET - aim_direction.y * held->recoil_offset
+            player_center.x + cosf(r) * ORBIT_DIST + perp.x * SIDE_OFFSET
+                - aim_direction.x * held->recoil_offset
+                + aim_direction.x * held->melee_forward_offset,
+            player_center.y + sinf(r) * ORBIT_DIST + perp.y * SIDE_OFFSET
+                - aim_direction.y * held->recoil_offset
+                + aim_direction.y * held->melee_forward_offset
         };
 
         // Decay recoil.
@@ -272,21 +308,59 @@ void weapons_update(WeaponManager *wm, BulletSystem *bullets, AudioState *audio,
         if (held->fire_cooldown_timer > 0.0f)
             held->fire_cooldown_timer -= dt;
 
-        // Reload countdown.
-        if (held->is_reloading)
+        // ── Melee swing animation ─────────────────────────────────────
+        if (held->is_melee() && held->is_swinging)
+        {
+            held->swing_timer += dt;
+            float dur = held->swing_duration();
+            float t   = (dur > 0.0f) ? std::min(held->swing_timer / dur, 1.0f) : 1.0f;
+
+            // Sine envelope: smooth 0 → peak → 0 over the full swing.
+            float env = sinf(t * 3.14159f);
+            held->swing_rotation_offset = held->swing_peak_angle() * env;
+            held->melee_forward_offset  = held->swing_peak_fwd()   * env;
+
+            // Fire the hitbox once, at ~40% of the swing (first forward pass).
+            if (!held->melee_hit_triggered && t >= 0.40f)
+            {
+                held->melee_hit_triggered = true;
+                // Start hitbox from the sprite grip (ORBIT_DIST out) so it doesn't
+                // overlap with the player's own position.
+                Vector2 melee_origin = Vector2Add(player_center,
+                    Vector2Scale(aim_direction, ORBIT_DIST));
+                int hits = collision_melee_vs_enemies(
+                    melee_origin, aim_direction,
+                    held->melee_range(), held->melee_width(),
+                    enemies, effects, wm);
+                if (hits > 0)
+                    held->on_melee_hit(hits, audio->master_volume, audio->sfx_volume);
+            }
+
+            if (t >= 1.0f)
+            {
+                held->is_swinging           = false;
+                held->swing_rotation_offset = 0.0f;
+                held->melee_forward_offset  = 0.0f;
+            }
+        }
+
+        // Reload countdown (ranged only).
+        if (!held->is_melee() && held->is_reloading)
         {
             held->reload_timer -= dt;
             if (held->reload_timer <= 0.0f)
             {
                 held->is_reloading = false;
                 held->reload_timer = 0.0f;
-                // Pull from reserve to top off the magazine.
                 int needed   = held->magazine_size() - held->current_ammo;
                 int transfer = std::min(needed, held->reserve_ammo);
                 held->current_ammo += transfer;
                 held->reserve_ammo -= transfer;
             }
         }
+
+        // Per-frame held update (e.g. music stream tick for saber).
+        held->update_held(dt, audio->master_volume, audio->sfx_volume);
 
         if (!input_blocked)
         {
@@ -300,40 +374,55 @@ void weapons_update(WeaponManager *wm, BulletSystem *bullets, AudioState *audio,
             bool fire_pressed = IsMouseButtonPressed(MOUSE_BUTTON_LEFT) || trigger_just;
             bool want_fire    = held->is_auto_fire() ? fire_held : fire_pressed;
 
-            if (want_fire && held->fire_cooldown_timer <= 0.0f && !held->is_reloading)
+            if (held->is_melee())
             {
-                if (held->current_ammo > 0)
+                // Melee: start a swing if not already mid-swing and cooldown ready.
+                if (want_fire && held->fire_cooldown_timer <= 0.0f && !held->is_swinging)
                 {
-                    Vector2 muzzle = calc_muzzle(*held, player_center, aim_direction);
-                    held->fire(bullets, muzzle, aim_direction);
-
-                    held->current_ammo--;
+                    held->is_swinging         = true;
+                    held->swing_timer         = 0.0f;
+                    held->melee_hit_triggered = false;
                     held->fire_cooldown_timer = 1.0f / held->fire_rate();
-                    held->recoil_offset      += held->recoil_distance();
-
                     held->play_shot_sound(audio->master_volume, audio->sfx_volume);
                 }
-                else if (!held->is_reloading && held->reserve_ammo > 0)
+            }
+            else
+            {
+                // Ranged: existing fire + auto-reload logic.
+                if (want_fire && held->fire_cooldown_timer <= 0.0f && !held->is_reloading)
                 {
-                    // Auto-reload on empty magazine (only if reserve available).
+                    if (held->current_ammo > 0)
+                    {
+                        Vector2 muzzle = calc_muzzle(*held, player_center, aim_direction);
+                        held->fire(bullets, muzzle, aim_direction);
+
+                        held->current_ammo--;
+                        held->fire_cooldown_timer = 1.0f / held->fire_rate();
+                        held->recoil_offset      += held->recoil_distance();
+
+                        held->play_shot_sound(audio->master_volume, audio->sfx_volume);
+                    }
+                    else if (!held->is_reloading && held->reserve_ammo > 0)
+                    {
+                        held->is_reloading = true;
+                        held->reload_timer = held->reload_time();
+                        held->play_reload_sound(audio->master_volume, audio->sfx_volume);
+                    }
+                }
+
+                // Manual reload: R / controller X.
+                bool reload_pressed =
+                    IsKeyPressed(KEY_R) ||
+                    IsGamepadButtonPressed(GAMEPAD_ID, GAMEPAD_BUTTON_RIGHT_FACE_LEFT);
+
+                if (reload_pressed && !held->is_reloading &&
+                    held->current_ammo < held->magazine_size() &&
+                    held->reserve_ammo > 0)
+                {
                     held->is_reloading = true;
                     held->reload_timer = held->reload_time();
                     held->play_reload_sound(audio->master_volume, audio->sfx_volume);
                 }
-            }
-
-            // Manual reload: R / controller X.
-            bool reload_pressed =
-                IsKeyPressed(KEY_R) ||
-                IsGamepadButtonPressed(GAMEPAD_ID, GAMEPAD_BUTTON_RIGHT_FACE_LEFT);
-
-            if (reload_pressed && !held->is_reloading &&
-                held->current_ammo < held->magazine_size() &&
-                held->reserve_ammo > 0)
-            {
-                held->is_reloading = true;
-                held->reload_timer = held->reload_time();
-                held->play_reload_sound(audio->master_volume, audio->sfx_volume);
             }
         }
     }
@@ -371,7 +460,9 @@ void weapons_draw_held(const WeaponManager *wm)
     for (const auto& w : wm->weapons)
     {
         if (!w->is_held) continue;
-        draw_held_sprite(*w, w->render_pos, w->render_rotation);
+        float draw_rot = w->render_rotation + w->swing_rotation_offset;
+        draw_held_sprite(*w, w->render_pos, draw_rot);
+        w->draw_overlay(w->render_pos, draw_rot);
     }
 }
 
@@ -380,6 +471,7 @@ void weapons_draw_hud(const WeaponManager *wm, Vector2 player_center)
     for (const auto& w : wm->weapons)
     {
         if (!w->is_held) continue;
+        if (w->is_melee()) break;  // no reload bar for melee
 
         if (w->is_reloading && w->reload_time() > 0.0f)
         {
@@ -405,6 +497,7 @@ void weapons_draw_ammo_screen(const WeaponManager *wm, int screen_w, int screen_
     for (const auto& w : wm->weapons)
     {
         if (!w->is_held) continue;
+        if (w->is_melee()) break;  // no ammo display for melee
 
         char ammo_buf[32];
         snprintf(ammo_buf, sizeof(ammo_buf), "%d / %d", w->current_ammo, w->reserve_ammo);

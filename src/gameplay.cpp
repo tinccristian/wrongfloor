@@ -95,7 +95,8 @@ void gameplay_update(GameState *state, float dt, int screen_w, int screen_h, boo
     player_update(&state->player, &state->tilemap, dt, mouse_world, &triggers, input_blocked);
 
     weapons_update(&state->weapons, &state->bullets, &state->audio,
-                   &state->tilemap, player_center(&state->player),
+                   &state->tilemap, &state->enemies, &state->effects,
+                   player_center(&state->player),
                    state->player.aim.direction, input_blocked, dt);
 
     bullets_update(&state->bullets, dt);
