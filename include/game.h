@@ -9,6 +9,7 @@
 #include "effects.h"
 #include "weapon_manager.h"
 #include "replay.h"
+#include "sound_events.h"
 #include "settings.h"
 #include <string>
 
@@ -47,6 +48,7 @@ struct GameState {
     EffectsSystem effects;
     WeaponManager weapons;
     ReplaySystem  replay;
+    SoundEventSystem sound_events;
     Settings      settings;
 
     // Game state machine

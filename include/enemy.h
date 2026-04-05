@@ -6,6 +6,7 @@
 #include "weapon.h"
 #include "audio.h"
 #include "animation.h"
+#include "sound_events.h"
 #include <memory>
 #include <vector>
 
@@ -18,6 +19,7 @@ enum class EnemyAIState {
     IDLE,    // standing still, watching
     ALERT,   // saw player — reaction delay before acting
     CHASE,   // moving toward player
+    SEARCH,  // investigating a last known or heard position
     ATTACK,  // within range, firing continuously
     DEAD
 };
@@ -29,9 +31,18 @@ struct Enemy {
     // ── AI ────────────────────────────────────────────────────────────
     EnemyAIState ai_state    = EnemyAIState::IDLE;
     float        alert_timer = 0.0f; // reaction delay in ALERT
+    float        search_timer = 0.0f;
+    float        time_since_last_seen_player = 0.0f;
+    float        hearing_cooldown = 0.0f;
 
     // Per-shot cooldown (replaces burst pattern).
     float fire_cooldown = 0.0f;
+
+    Vector2 last_known_player_pos{};
+    bool    has_last_known_player_pos = false;
+
+    Vector2 investigation_target{};
+    bool    has_investigation_target = false;
 
     // Facing / aim — updated each frame once alerted; stays at spawn dir in IDLE.
     float   facing_angle = 0.0f; // screen degrees (0=right, 90=down)
@@ -77,7 +88,8 @@ void enemies_clear(EnemyManager *em);
 
 // Run AI state machine, vision, movement, and weapon fire. Update animations.
 void enemies_update(EnemyManager *em, BulletSystem *bullets, AudioState *audio,
-                    const Tilemap *tm, Vector2 player_center, float dt);
+                    const Tilemap *tm, SoundEventSystem *sound_events,
+                    Vector2 player_center, float dt);
 
 // Draw all alive enemies and their weapons.
 void enemies_draw(const EnemyManager *em);

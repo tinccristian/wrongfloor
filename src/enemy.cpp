@@ -4,6 +4,7 @@
 #include "game.h"
 #include "player.h"   // FacingDirection, SPRITE_SCALE constants
 #include "raymath.h"
+#include <algorithm>
 #include <cmath>
 #include <cstdlib>
 
@@ -20,9 +21,17 @@ static constexpr float VISION_RANGE       = 250.0f;
 static constexpr float VISION_HALF_ANGLE  = 45.0f;   // degrees, half of 90° cone
 static constexpr float ALERT_DELAY_MIN    = 0.3f;
 static constexpr float ALERT_DELAY_MAX    = 0.5f;
+static constexpr float SOUND_ALERT_DELAY_MIN = 0.12f;
+static constexpr float SOUND_ALERT_DELAY_MAX = 0.22f;
 static constexpr float CHASE_SPEED        = 185.0f;
 static constexpr float ATTACK_RANGE       = 200.0f;
 static constexpr float EXTRA_SPREAD_DEG   = 12.0f;   // extra inaccuracy per shot
+static constexpr float SEARCH_DURATION_MIN = 1.1f;
+static constexpr float SEARCH_DURATION_MAX = 2.0f;
+static constexpr float SEARCH_REACH_DIST   = 16.0f;
+static constexpr float SEARCH_TURN_SPEED   = 180.0f;
+static constexpr float HEARING_COOLDOWN    = 0.18f;
+static constexpr float GUNSHOT_SOUND_LIFETIME = 0.28f;
 
 // Weapon orbit rendering — mirrors weapon_manager constants.
 static constexpr float ORBIT_DIST     = 22.0f;
@@ -164,6 +173,83 @@ static Vector2 calc_muzzle(const Enemy& e)
     return Vector2Add(e.position, Vector2Scale(e.aim_dir, dist));
 }
 
+static float weapon_sound_radius(const Weapon& weapon)
+{
+    if (weapon.type_name() == "deagle")         return 280.0f;
+    if (weapon.type_name() == "assault_riffle") return 220.0f;
+    if (weapon.type_name() == "saber")          return 110.0f;
+    if (weapon.type_name() == "dagger")         return 75.0f;
+    return 180.0f;
+}
+
+static void look_toward(Enemy& e, Vector2 target)
+{
+    Vector2 to_target = Vector2Subtract(target, e.position);
+    if (Vector2LengthSqr(to_target) <= 0.01f) return;
+
+    e.aim_dir      = Vector2Normalize(to_target);
+    e.facing_angle = atan2f(e.aim_dir.y, e.aim_dir.x) * RAD2DEG;
+}
+
+static void remember_player(Enemy& e, Vector2 player_pos)
+{
+    e.last_known_player_pos     = player_pos;
+    e.has_last_known_player_pos = true;
+    e.time_since_last_seen_player = 0.0f;
+    e.has_investigation_target  = false;
+}
+
+static void clear_targets(Enemy& e)
+{
+    e.has_last_known_player_pos = false;
+    e.has_investigation_target  = false;
+    e.search_timer              = 0.0f;
+    e.time_since_last_seen_player = 0.0f;
+}
+
+static void begin_visual_alert(Enemy& e)
+{
+    e.ai_state    = EnemyAIState::ALERT;
+    e.alert_timer = randf(ALERT_DELAY_MIN, ALERT_DELAY_MAX);
+}
+
+static void begin_sound_alert(Enemy& e, Vector2 sound_pos)
+{
+    e.investigation_target   = sound_pos;
+    e.has_investigation_target = true;
+    e.search_timer           = randf(SEARCH_DURATION_MIN, SEARCH_DURATION_MAX);
+    e.hearing_cooldown       = HEARING_COOLDOWN;
+
+    if (e.ai_state == EnemyAIState::IDLE)
+    {
+        e.ai_state    = EnemyAIState::ALERT;
+        e.alert_timer = randf(SOUND_ALERT_DELAY_MIN, SOUND_ALERT_DELAY_MAX);
+    }
+}
+
+static const SoundEvent* best_audible_sound(const Enemy& e, const SoundEventSystem *sound_events)
+{
+    if (!sound_events) return nullptr;
+
+    // Choose the nearest audible event. Events are already short-lived, so distance is
+    // enough to keep investigations local and readable without a heavier priority system.
+    const SoundEvent* best = nullptr;
+    float best_dsq = 0.0f;
+
+    for (const SoundEvent& event : sound_events->events)
+    {
+        float dsq = Vector2DistanceSqr(e.position, event.position);
+        if (dsq > event.radius * event.radius) continue;
+        if (!best || dsq < best_dsq)
+        {
+            best = &event;
+            best_dsq = dsq;
+        }
+    }
+
+    return best;
+}
+
 // ── Public API ────────────────────────────────────────────────────────────────
 
 void enemies_init(EnemyManager *em)
@@ -232,7 +318,8 @@ void enemies_clear(EnemyManager *em)
 }
 
 void enemies_update(EnemyManager *em, BulletSystem *bullets, AudioState *audio,
-                    const Tilemap *tm, Vector2 player_center, float dt)
+                    const Tilemap *tm, SoundEventSystem *sound_events,
+                    Vector2 player_center, float dt)
 {
     for (auto& e : em->enemies)
     {
@@ -240,47 +327,78 @@ void enemies_update(EnemyManager *em, BulletSystem *bullets, AudioState *audio,
 
         // ── State machine ─────────────────────────────────────────────
         bool is_moving = false;
+        float dist_to_player = Vector2Distance(e.position, player_center);
+        bool sees_player = can_see_player(e, player_center, tm);
+
+        if (e.hearing_cooldown > 0.0f)
+            e.hearing_cooldown = std::max(0.0f, e.hearing_cooldown - dt);
+
+        if (sees_player)
+        {
+            remember_player(e, player_center);
+            look_toward(e, player_center);
+
+            if (e.ai_state == EnemyAIState::IDLE)
+                begin_visual_alert(e);
+            else if (e.ai_state == EnemyAIState::SEARCH)
+                e.ai_state = (dist_to_player <= ATTACK_RANGE) ? EnemyAIState::ATTACK : EnemyAIState::CHASE;
+        }
+        else if (e.has_last_known_player_pos)
+        {
+            e.time_since_last_seen_player += dt;
+        }
+
+        if (!sees_player &&
+            e.hearing_cooldown <= 0.0f &&
+            !e.has_last_known_player_pos &&
+            e.ai_state != EnemyAIState::CHASE &&
+            e.ai_state != EnemyAIState::ATTACK)
+        {
+            if (const SoundEvent* heard = best_audible_sound(e, sound_events))
+                begin_sound_alert(e, heard->position);
+        }
 
         switch (e.ai_state)
         {
         case EnemyAIState::IDLE:
-            // Only vision check happens in IDLE — once triggered, never returns.
-            if (can_see_player(e, player_center, tm))
-            {
-                e.ai_state   = EnemyAIState::ALERT;
-                e.alert_timer = randf(ALERT_DELAY_MIN, ALERT_DELAY_MAX);
-            }
             break;
 
         case EnemyAIState::ALERT:
-            // Track player during reaction delay (enemy has spotted them).
-            {
-                Vector2 to_p = Vector2Subtract(player_center, e.position);
-                if (Vector2LengthSqr(to_p) > 0.01f)
-                {
-                    e.aim_dir     = Vector2Normalize(to_p);
-                    e.facing_angle = atan2f(e.aim_dir.y, e.aim_dir.x) * RAD2DEG;
-                }
-            }
+            if (sees_player)
+                look_toward(e, player_center);
+            else if (e.has_last_known_player_pos)
+                look_toward(e, e.last_known_player_pos);
+            else if (e.has_investigation_target)
+                look_toward(e, e.investigation_target);
+
             e.alert_timer -= dt;
             if (e.alert_timer <= 0.0f)
             {
-                float dist = Vector2Distance(e.position, player_center);
-                e.ai_state = (dist <= ATTACK_RANGE) ? EnemyAIState::ATTACK : EnemyAIState::CHASE;
+                if (sees_player)
+                {
+                    e.ai_state = (dist_to_player <= ATTACK_RANGE) ? EnemyAIState::ATTACK : EnemyAIState::CHASE;
+                }
+                else if (e.has_last_known_player_pos)
+                {
+                    e.ai_state = EnemyAIState::CHASE;
+                }
+                else if (e.has_investigation_target)
+                {
+                    e.ai_state = EnemyAIState::SEARCH;
+                }
+                else
+                {
+                    e.ai_state = EnemyAIState::IDLE;
+                }
             }
             break;
 
         case EnemyAIState::CHASE:
-            // Always know where the player is — no lost-sight logic.
+            if (sees_player)
             {
-                Vector2 to_p = Vector2Subtract(player_center, e.position);
-                float dist = Vector2Length(to_p);
-                if (dist > 0.01f)
-                {
-                    e.aim_dir      = Vector2Scale(to_p, 1.0f / dist);
-                    e.facing_angle = atan2f(e.aim_dir.y, e.aim_dir.x) * RAD2DEG;
-                }
-                if (dist <= ATTACK_RANGE)
+                look_toward(e, player_center);
+
+                if (dist_to_player <= ATTACK_RANGE)
                 {
                     e.ai_state = EnemyAIState::ATTACK;
                 }
@@ -291,7 +409,6 @@ void enemies_update(EnemyManager *em, BulletSystem *bullets, AudioState *audio,
                     is_moving  = true;
                 }
 
-                // Fire while chasing — same continuous logic as ATTACK state.
                 e.fire_cooldown -= dt;
                 if (e.fire_cooldown <= 0.0f && e.weapon)
                 {
@@ -300,6 +417,9 @@ void enemies_update(EnemyManager *em, BulletSystem *bullets, AudioState *audio,
                     Vector2 fire_dir = { cosf(base_ang + extra), sinf(base_ang + extra) };
 
                     e.weapon->fire(bullets, calc_muzzle(e), fire_dir, BulletOwner::ENEMY);
+                    if (sound_events)
+                        sound_events_push(sound_events, calc_muzzle(e),
+                                          weapon_sound_radius(*e.weapon), GUNSHOT_SOUND_LIFETIME);
                     e.weapon->play_shot_sound(audio->master_volume, audio->sfx_volume);
                     e.weapon_recoil_offset += e.weapon->recoil_distance();
 
@@ -312,25 +432,117 @@ void enemies_update(EnemyManager *em, BulletSystem *bullets, AudioState *audio,
                         : 0.15f;
                 }
             }
+            else if (e.has_last_known_player_pos)
+            {
+                look_toward(e, e.last_known_player_pos);
+                float dist_to_last_known = Vector2Distance(e.position, e.last_known_player_pos);
+                if (dist_to_last_known > SEARCH_REACH_DIST)
+                {
+                    Vector2 to_last = Vector2Subtract(e.last_known_player_pos, e.position);
+                    if (Vector2LengthSqr(to_last) > 0.01f)
+                    {
+                        Vector2 delta = Vector2Scale(Vector2Normalize(to_last), CHASE_SPEED * dt);
+                        e.position = move_with_slide(e.position, delta, tm);
+                        is_moving  = true;
+                    }
+                }
+                else
+                {
+                    e.ai_state     = EnemyAIState::SEARCH;
+                    e.search_timer = randf(SEARCH_DURATION_MIN, SEARCH_DURATION_MAX);
+                }
+            }
+            else if (e.has_investigation_target)
+            {
+                e.ai_state = EnemyAIState::SEARCH;
+            }
+            else
+            {
+                e.ai_state = EnemyAIState::IDLE;
+            }
+            break;
+
+        case EnemyAIState::SEARCH:
+            if (sees_player)
+            {
+                e.ai_state = (dist_to_player <= ATTACK_RANGE) ? EnemyAIState::ATTACK : EnemyAIState::CHASE;
+                break;
+            }
+
+            if (e.has_last_known_player_pos)
+            {
+                look_toward(e, e.last_known_player_pos);
+                float dist_to_last_known = Vector2Distance(e.position, e.last_known_player_pos);
+                if (dist_to_last_known > SEARCH_REACH_DIST)
+                {
+                    Vector2 to_last = Vector2Subtract(e.last_known_player_pos, e.position);
+                    if (Vector2LengthSqr(to_last) > 0.01f)
+                    {
+                        Vector2 delta = Vector2Scale(Vector2Normalize(to_last), CHASE_SPEED * dt);
+                        e.position = move_with_slide(e.position, delta, tm);
+                        is_moving  = true;
+                    }
+                }
+                else
+                {
+                    e.search_timer -= dt;
+                    e.facing_angle += SEARCH_TURN_SPEED * dt;
+                    e.aim_dir = {
+                        cosf(e.facing_angle * DEG2RAD),
+                        sinf(e.facing_angle * DEG2RAD)
+                    };
+                    if (e.search_timer <= 0.0f)
+                    {
+                        clear_targets(e);
+                        e.ai_state = EnemyAIState::IDLE;
+                    }
+                }
+            }
+            else if (e.has_investigation_target)
+            {
+                look_toward(e, e.investigation_target);
+                float dist_to_sound = Vector2Distance(e.position, e.investigation_target);
+                if (dist_to_sound > SEARCH_REACH_DIST)
+                {
+                    Vector2 to_sound = Vector2Subtract(e.investigation_target, e.position);
+                    if (Vector2LengthSqr(to_sound) > 0.01f)
+                    {
+                        Vector2 delta = Vector2Scale(Vector2Normalize(to_sound), CHASE_SPEED * dt);
+                        e.position = move_with_slide(e.position, delta, tm);
+                        is_moving  = true;
+                    }
+                }
+                else
+                {
+                    e.search_timer -= dt;
+                    e.facing_angle += SEARCH_TURN_SPEED * dt;
+                    e.aim_dir = {
+                        cosf(e.facing_angle * DEG2RAD),
+                        sinf(e.facing_angle * DEG2RAD)
+                    };
+                    if (e.search_timer <= 0.0f)
+                    {
+                        clear_targets(e);
+                        e.ai_state = EnemyAIState::IDLE;
+                    }
+                }
+            }
+            else
+            {
+                e.ai_state = EnemyAIState::IDLE;
+            }
             break;
 
         case EnemyAIState::ATTACK:
-            // Always know where the player is — no lost-sight logic.
+            if (sees_player)
             {
-                Vector2 to_p = Vector2Subtract(player_center, e.position);
-                float dist = Vector2Length(to_p);
-                if (dist > 0.01f)
-                {
-                    e.aim_dir     = Vector2Scale(to_p, 1.0f / dist);
-                    e.facing_angle = atan2f(e.aim_dir.y, e.aim_dir.x) * RAD2DEG;
-                }
-                if (dist > ATTACK_RANGE * 1.2f)
+                look_toward(e, player_center);
+                if (dist_to_player > ATTACK_RANGE * 1.2f)
                 {
                     e.ai_state = EnemyAIState::CHASE;
                     break;
                 }
 
-                // Continuous fire on weapon cooldown — same pattern as player auto-fire.
                 e.fire_cooldown -= dt;
                 if (e.fire_cooldown <= 0.0f && e.weapon)
                 {
@@ -339,6 +551,9 @@ void enemies_update(EnemyManager *em, BulletSystem *bullets, AudioState *audio,
                     Vector2 fire_dir = { cosf(base_ang + extra), sinf(base_ang + extra) };
 
                     e.weapon->fire(bullets, calc_muzzle(e), fire_dir, BulletOwner::ENEMY);
+                    if (sound_events)
+                        sound_events_push(sound_events, calc_muzzle(e),
+                                          weapon_sound_radius(*e.weapon), GUNSHOT_SOUND_LIFETIME);
                     e.weapon->play_shot_sound(audio->master_volume, audio->sfx_volume);
                     e.weapon_recoil_offset += e.weapon->recoil_distance();
 
@@ -350,6 +565,18 @@ void enemies_update(EnemyManager *em, BulletSystem *bullets, AudioState *audio,
                         ? 1.0f / e.weapon->fire_rate()
                         : 0.15f;
                 }
+            }
+            else if (e.has_last_known_player_pos)
+            {
+                e.ai_state = EnemyAIState::CHASE;
+            }
+            else if (e.has_investigation_target)
+            {
+                e.ai_state = EnemyAIState::SEARCH;
+            }
+            else
+            {
+                e.ai_state = EnemyAIState::IDLE;
             }
             break;
 

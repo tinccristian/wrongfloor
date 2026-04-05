@@ -25,6 +25,9 @@ static constexpr float RELOAD_BAR_W     = 32.0f;
 static constexpr float RELOAD_BAR_H     = 4.0f;
 static constexpr float RELOAD_BAR_Y_OFF = -50.0f;
 static constexpr int   GAMEPAD_ID       = 0;
+static constexpr float GUNSHOT_SOUND_LIFETIME = 0.28f;
+static constexpr float IMPACT_SOUND_LIFETIME  = 0.22f;
+static constexpr float THROW_IMPACT_RADIUS    = 150.0f;
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -51,6 +54,15 @@ static bool point_solid(const Tilemap *tm, float wx, float wy)
     int tx = (int)floorf(wx / (float)TILE_SIZE);
     int ty = (int)floorf(wy / (float)TILE_SIZE);
     return tilemap_is_solid(tm, tx, ty);
+}
+
+static float weapon_sound_radius(const Weapon& weapon)
+{
+    if (weapon.type_name() == "deagle")         return 280.0f;
+    if (weapon.type_name() == "assault_riffle") return 220.0f;
+    if (weapon.type_name() == "saber")          return 110.0f;
+    if (weapon.type_name() == "dagger")         return 75.0f;
+    return 180.0f;
 }
 
 // ── Draw helpers ──────────────────────────────────────────────────────────────
@@ -177,6 +189,7 @@ void weapons_clear(WeaponManager *wm)
 
 void weapons_update(WeaponManager *wm, BulletSystem *bullets, AudioState *audio,
                     const Tilemap *tm, EnemyManager *enemies, EffectsSystem *effects,
+                    SoundEventSystem *sound_events,
                     Vector2 player_center, Vector2 aim_direction,
                     bool input_blocked, float dt)
 {
@@ -205,6 +218,10 @@ void weapons_update(WeaponManager *wm, BulletSystem *bullets, AudioState *audio,
         if (point_solid(tm, new_pos.x, new_pos.y) ||
             Vector2Length(w->throw_velocity) < THROW_STOP_SPEED)
         {
+            if (sound_events)
+                sound_events_push(sound_events, w->position,
+                                  THROW_IMPACT_RADIUS, IMPACT_SOUND_LIFETIME);
+
             w->is_thrown     = false;
             w->is_on_ground  = true;
             w->throw_velocity = {};
@@ -395,6 +412,9 @@ void weapons_update(WeaponManager *wm, BulletSystem *bullets, AudioState *audio,
                     {
                         Vector2 muzzle = calc_muzzle(*held, player_center, aim_direction);
                         held->fire(bullets, muzzle, aim_direction);
+                        if (sound_events)
+                            sound_events_push(sound_events, muzzle,
+                                              weapon_sound_radius(*held), GUNSHOT_SOUND_LIFETIME);
 
                         held->current_ammo--;
                         held->fire_cooldown_timer = 1.0f / held->fire_rate();

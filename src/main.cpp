@@ -77,6 +77,7 @@ static void register_load_level(DebugState *debug, GameState *state,
             bullets_clear(&state->bullets);
             enemies_load_from_tilemap(&state->enemies, &state->tilemap);
             effects_clear(&state->effects);
+            sound_events_clear(&state->sound_events);
             camera_init(&state->camera, player_center(&state->player), screen_w, screen_h);
 
             debug_print(ds, "Loaded: " + matched);

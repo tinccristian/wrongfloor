@@ -194,10 +194,16 @@ void debug_init(DebugState *d)
             push_output(ds, std::string("showWeaponInfo: ") + (ds->show_weapon_info ? "ON" : "OFF"));
         });
 
-    debug_register_command(d, "showVisionCones", "Toggle enemy vision cone overlay (yellow=IDLE, red=ALERT/CHASE/ATTACK)",
+    debug_register_command(d, "showVisionCones", "Toggle enemy vision cone overlay (yellow=IDLE, red=alerted/searching)",
         [](DebugState *ds, const std::string&) {
             ds->show_vision_cones = !ds->show_vision_cones;
             push_output(ds, std::string("showVisionCones: ") + (ds->show_vision_cones ? "ON" : "OFF"));
+        });
+
+    debug_register_command(d, "showSoundEvents", "Toggle sound-event and investigation target overlay",
+        [](DebugState *ds, const std::string&) {
+            ds->show_sound_events = !ds->show_sound_events;
+            push_output(ds, std::string("showSoundEvents: ") + (ds->show_sound_events ? "ON" : "OFF"));
         });
 }
 
@@ -372,6 +378,34 @@ void debug_draw_world(const DebugState *d, const GameState *state)
             float end_deg   = enemy.facing_angle + VISION_HALF_ANGLE;
             DrawCircleSector(enemy.position, VISION_RANGE, start_deg, end_deg, 16, cone_color);
             DrawCircleSectorLines(enemy.position, VISION_RANGE, start_deg, end_deg, 16, line_color);
+        }
+    }
+
+    // ── Sound events + AI memory targets ─────────────────────────────
+    if (d->show_sound_events)
+    {
+        for (const auto& event : state->sound_events.events)
+        {
+            DrawCircleLines((int)event.position.x, (int)event.position.y, event.radius,
+                            Color{80, 220, 255, 170});
+            DrawCircleV(event.position, 3.0f, Color{80, 220, 255, 220});
+        }
+
+        for (const auto& enemy : state->enemies.enemies)
+        {
+            if (!enemy.alive) continue;
+
+            if (enemy.has_investigation_target)
+            {
+                DrawLineV(enemy.position, enemy.investigation_target, Color{80, 220, 255, 180});
+                DrawCircleV(enemy.investigation_target, 4.0f, Color{80, 220, 255, 220});
+            }
+
+            if (enemy.has_last_known_player_pos)
+            {
+                DrawLineV(enemy.position, enemy.last_known_player_pos, Color{255, 160, 80, 160});
+                DrawCircleV(enemy.last_known_player_pos, 4.0f, Color{255, 160, 80, 220});
+            }
         }
     }
 

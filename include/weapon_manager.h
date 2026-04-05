@@ -5,6 +5,7 @@
 #include "bullets.h"
 #include "audio.h"
 #include "effects.h"
+#include "sound_events.h"
 // EnemyManager forward-declared to keep header slim; included in weapon_manager.cpp.
 struct EnemyManager;
 #include <memory>
@@ -47,6 +48,7 @@ void weapons_clear(WeaponManager *wm);
 // player_center and aim_direction come directly from the Player struct.
 void weapons_update(WeaponManager *wm, BulletSystem *bullets, AudioState *audio,
                     const Tilemap *tm, EnemyManager *enemies, EffectsSystem *effects,
+                    SoundEventSystem *sound_events,
                     Vector2 player_center, Vector2 aim_direction,
                     bool input_blocked, float dt);
 

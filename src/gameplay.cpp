@@ -2,6 +2,9 @@
 #include "collision_system.h"
 #include "replay.h"
 
+static constexpr float FOOTSTEP_SOUND_RADIUS   = 90.0f;
+static constexpr float FOOTSTEP_SOUND_LIFETIME = 0.20f;
+
 static void load_level(GameState *state, int index, int screen_w, int screen_h)
 {
     tilemap_unload(&state->tilemap);
@@ -22,6 +25,7 @@ static void load_level(GameState *state, int index, int screen_w, int screen_h)
 
     // Fresh level footage — discard replay buffer so old frames can't leak in.
     replay_reset_buffer(&state->replay);
+    sound_events_clear(&state->sound_events);
     state->time_scale         = 1.0f;
     state->death_slowmo_timer = 0.0f;
 }
@@ -34,6 +38,13 @@ static void update_audio(const PlayerSoundTriggers& triggers, GameState *state)
 
     if (state->player.state != PLAYER_WALKING) StopSound(state->audio.snd_walk);
     if (state->player.state != PLAYER_RUNNING) StopSound(state->audio.snd_run);
+}
+
+static void emit_player_sound_events(const PlayerSoundTriggers& triggers, GameState *state)
+{
+    if (!triggers.footstep_run) return;
+    sound_events_push(&state->sound_events, player_center(&state->player),
+                      FOOTSTEP_SOUND_RADIUS, FOOTSTEP_SOUND_LIFETIME);
 }
 
 static void update_level_transition(GameState *state, int screen_w, int screen_h)
@@ -85,6 +96,7 @@ void gameplay_update(GameState *state, float dt, int screen_w, int screen_h, boo
     {
         bullets_update(&state->bullets, dt);  // dt is already scaled by main.cpp
         effects_update(&state->effects, &state->tilemap, dt);
+        sound_events_update(&state->sound_events, dt);
         return;
     }
 
@@ -96,7 +108,7 @@ void gameplay_update(GameState *state, float dt, int screen_w, int screen_h, boo
                   &triggers, input_blocked);
 
     weapons_update(&state->weapons, &state->bullets, &state->audio,
-                   &state->tilemap, &state->enemies, &state->effects,
+                   &state->tilemap, &state->enemies, &state->effects, &state->sound_events,
                    player_center(&state->player),
                    state->player.aim.direction, input_blocked, dt);
 
@@ -112,9 +124,12 @@ void gameplay_update(GameState *state, float dt, int screen_w, int screen_h, boo
         return;
     }
 
+    emit_player_sound_events(triggers, state);
     effects_update(&state->effects, &state->tilemap, dt);
     enemies_update(&state->enemies, &state->bullets, &state->audio,
-                   &state->tilemap, player_center(&state->player), dt);
+                   &state->tilemap, &state->sound_events,
+                   player_center(&state->player), dt);
+    sound_events_update(&state->sound_events, dt);
     camera_update(&state->camera, player_center(&state->player), &state->tilemap,
                   screen_w, screen_h, dt);
 
@@ -163,6 +178,7 @@ void gameplay_cleanup(GameState *state)
     enemies_cleanup(&state->enemies);
     weapons_cleanup(&state->weapons);
     replay_cleanup(&state->replay);
+    sound_events_clear(&state->sound_events);
     tilemap_unload(&state->tilemap);
     audio_cleanup(&state->audio);
     // EffectsSystem holds no GPU resources — vectors free themselves.
