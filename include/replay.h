@@ -3,29 +3,20 @@
 #include "raylib.h"
 
 // Circular-buffer death replay system.
-//
-// Normal flow: replay_capture_frame() is called every frame; it blit-copies the
-// current game frame (from capture_rt) into a slot at half resolution, overwriting
-// the oldest slot when the buffer is full.
-//
-// On player death: replay_trigger() snapshots the buffer state and starts the
-// REPLAY phase. replay_update() advances the sequence; replay_draw() renders it
-// with a VHS post-process shader. When replay_update() returns true, the caller
-// should reload the level.
 struct ReplaySystem {
-    // Buffer holds ~3 s of footage at 30 captured fps (every 2nd frame at 60 fps).
+    // Buffer holds ~3 s of footage at 30 captured fps.
     static constexpr int   BUFFER_SIZE  = 90;
     static constexpr int   CAPTURE_W    = 640;
     static constexpr int   CAPTURE_H    = 360;
-    static constexpr float CAPTURE_FPS  = 30.0f;  // effective capture rate
-    static constexpr float REPLAY_SPEED = 3.0f;   // playback rate multiplier
+    static constexpr float CAPTURE_FPS  = 30.0f;
+    static constexpr float REPLAY_SPEED = 1.0f;
     static constexpr float BLACKOUT_DUR = 0.2f;   // black-screen duration after replay
 
     // Circular frame buffer — each slot is a render texture at CAPTURE_W x CAPTURE_H.
     RenderTexture2D frames[BUFFER_SIZE]{};
     int  write_head  = 0;  // next slot to write
     int  frame_count = 0;  // valid frames currently stored (0..BUFFER_SIZE)
-    int  skip_count  = 0;  // ticks since last capture; write every 2nd frame
+    float capture_accum = 0.0f; // wall-clock accumulator for fixed-rate capture
 
     // Full-resolution intermediate target. The game renders into this each frame;
     // it is then either blitted to screen or downscaled into the circular buffer.
@@ -43,17 +34,26 @@ struct ReplaySystem {
     float read_pos   = 0.0f;  // fractional frame index into the play sequence
     int   play_start = 0;     // oldest frame slot index at trigger time
     int   play_count = 0;     // total frames to play back
+
+    // Freeze the pre-death buffer on the fatal frame so slow-mo does not pollute replay.
+    int  snapshot_write_head  = 0;
+    int  snapshot_frame_count = 0;
+    bool snapshot_valid       = false;
 };
 
 // Allocate all render textures and load the VHS shader. Call once after InitWindow.
 void replay_init(ReplaySystem *r, int screen_w, int screen_h);
 
-// Downscale capture_rt into the circular buffer (every 2nd call is a no-op).
-// Call once per frame during normal gameplay only.
-void replay_capture_frame(ReplaySystem *r);
+// Downscale capture_rt into the circular buffer at a fixed capture rate.
+// Pass `force=true` on the fatal frame so the kill frame is guaranteed to land in
+// the buffer before the snapshot is frozen.
+void replay_capture_frame(ReplaySystem *r, float real_dt, bool force = false);
 
 // Clear the circular buffer (e.g. after a level load).
 void replay_reset_buffer(ReplaySystem *r);
+
+// Freeze the current ring-buffer state for later replay playback.
+void replay_snapshot(ReplaySystem *r);
 
 // Snapshot the buffer state and begin the REPLAY → BLACKOUT sequence.
 void replay_trigger(ReplaySystem *r);

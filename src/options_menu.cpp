@@ -126,7 +126,7 @@ void options_menu_init(OptionsMenu *menu, OptionsSection /*section*/, Settings *
     }
 }
 
-OptionsAction options_menu_update(OptionsMenu *menu, float dt, int screen_w, int screen_h)
+OptionsAction options_menu_update(OptionsMenu *menu, float dt, int *screen_w, int *screen_h)
 {
     if (!menu->settings) return OptionsAction::None;
 
@@ -180,7 +180,7 @@ OptionsAction options_menu_update(OptionsMenu *menu, float dt, int screen_w, int
         {
             s.res_idx = (s.res_idx + delta + RESOLUTION_COUNT) % RESOLUTION_COUNT;
             item.value = RESOLUTIONS[s.res_idx].label;
-            settings_apply_display(&s, nullptr, nullptr);
+            settings_apply_display(&s, screen_w, screen_h);
             changed = true;
         }
         else if (item.label == "  WINDOW MODE")
@@ -188,14 +188,14 @@ OptionsAction options_menu_update(OptionsMenu *menu, float dt, int screen_w, int
             int m = ((int)s.window_mode + delta + 3) % 3;
             s.window_mode = (WindowMode)m;
             item.value = window_mode_label(s.window_mode);
-            settings_apply_display(&s, nullptr, nullptr);
+            settings_apply_display(&s, screen_w, screen_h);
             changed = true;
         }
         else if (item.label == "  VSYNC")
         {
             s.vsync = s.vsync ? 0 : 1;
             item.value = s.vsync ? "ON" : "OFF";
-            settings_apply_display(&s, nullptr, nullptr);
+            settings_apply_display(&s, screen_w, screen_h);
             changed = true;
         }
         else if (item.label == "  MASTER VOLUME")

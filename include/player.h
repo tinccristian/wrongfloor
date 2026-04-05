@@ -83,8 +83,8 @@ void player_init(Player *player, Vector2 start_pos);
 // Fills *triggers with sound events that fired this frame.
 // Pass input_blocked=true to suppress movement input while preserving aiming.
 void player_update(Player *player, const Tilemap *tm, float dt,
-                   Vector2 aim_target_world, PlayerSoundTriggers *triggers,
-                   bool input_blocked = false);
+                   Vector2 aim_target_world, Vector2 virtual_mouse,
+                   PlayerSoundTriggers *triggers, bool input_blocked = false);
 
 // No-op — retained for API consistency. Call before BeginDrawing each frame.
 void player_prepare_draw(Player *player);

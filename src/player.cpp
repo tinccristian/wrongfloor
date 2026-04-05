@@ -147,10 +147,10 @@ static void set_directional_animation(Player *player, const Animation *next_anim
     }
 }
 
-static PlayerInputFrame sample_player_input(bool input_blocked)
+static PlayerInputFrame sample_player_input(bool input_blocked, Vector2 virtual_mouse)
 {
     PlayerInputFrame input;
-    input.mouse_screen = GetMousePosition();
+    input.mouse_screen = virtual_mouse;
 
     if (!input_blocked)
     {
@@ -273,7 +273,7 @@ void player_init(Player *player, Vector2 start_pos)
     player->aim.direction                 = { 1.0f, 0.0f };
     player->aim.angle_deg                 = 0.0f;
     player->aim.active_input_mode         = AIM_MOUSE_KEYBOARD;
-    player->aim.last_mouse_screen_position = GetMousePosition();
+    player->aim.last_mouse_screen_position = { 0.0f, 0.0f };
     player->aim.facing_direction           = FACE_FRONT;
     player->state      = PLAYER_IDLE;
     player->prev_state = PLAYER_IDLE;
@@ -295,11 +295,11 @@ void player_init(Player *player, Vector2 start_pos)
 }
 
 void player_update(Player *player, const Tilemap *tm, float dt,
-                   Vector2 aim_target_world, PlayerSoundTriggers *triggers,
-                   bool input_blocked)
+                   Vector2 aim_target_world, Vector2 virtual_mouse,
+                   PlayerSoundTriggers *triggers, bool input_blocked)
 {
     *triggers = PlayerSoundTriggers{};
-    PlayerInputFrame input  = sample_player_input(input_blocked);
+    PlayerInputFrame input  = sample_player_input(input_blocked, virtual_mouse);
     Vector2 move_input      = clamp_move_input(input.move_input);
     float   input_length    = Vector2Length(move_input);
 

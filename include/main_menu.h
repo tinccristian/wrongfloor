@@ -24,7 +24,7 @@ void main_menu_init(MainMenu *menu);
 
 // Handle navigation input, mouse hover/click, and advance lerp animations
 // Returns the action triggered this frame (MainMenuAction::None if nothing confirmed)
-MainMenuAction main_menu_update(MainMenu *menu, AudioState *audio, float dt, int screen_w, int screen_h);
+MainMenuAction main_menu_update(MainMenu *menu, AudioState *audio, float dt, int screen_w, int screen_h, Vector2 virtual_mouse);
 
 // Draw the splash background and animated menu items
 void main_menu_draw(const MainMenu *menu, int screen_w, int screen_h);

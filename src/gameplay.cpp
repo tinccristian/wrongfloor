@@ -88,11 +88,12 @@ void gameplay_update(GameState *state, float dt, int screen_w, int screen_h, boo
         return;
     }
 
-    Vector2 mouse_world = GetScreenToWorld2D(GetMousePosition(), state->camera.cam);
+    Vector2 mouse_world = GetScreenToWorld2D(state->virtual_mouse, state->camera.cam);
     PlayerSoundTriggers triggers;
 
     // Update order: player → weapons (fire) → bullet physics → collision → effects → enemies → camera
-    player_update(&state->player, &state->tilemap, dt, mouse_world, &triggers, input_blocked);
+    player_update(&state->player, &state->tilemap, dt, mouse_world, state->virtual_mouse,
+                  &triggers, input_blocked);
 
     weapons_update(&state->weapons, &state->bullets, &state->audio,
                    &state->tilemap, &state->enemies, &state->effects,

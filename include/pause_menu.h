@@ -23,7 +23,7 @@ void pause_menu_init(PauseMenu *menu);
 
 // Handle navigation input, mouse hover/click, and advance lerp animations.
 // Returns the action triggered this frame (PauseAction::None if nothing confirmed).
-PauseAction pause_menu_update(PauseMenu *menu, AudioState *audio, float dt, int screen_w, int screen_h);
+PauseAction pause_menu_update(PauseMenu *menu, AudioState *audio, float dt, int screen_w, int screen_h, Vector2 virtual_mouse);
 
 // Draw the translucent overlay and animated menu items in screen space.
 // Call outside BeginMode2D.

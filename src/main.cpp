@@ -107,14 +107,18 @@ int main(void)
     int screenHeight = 720;
 
     InitWindow(screenWidth, screenHeight, "wrongfloor");
-    SetTargetFPS(60);
     SetExitKey(0); // Escape is handled manually
+    SetTargetFPS(60);
 
     GameState state{};
     settings_load(&state.settings);
 
-    // Apply display settings from saved config
+    // Apply display settings from saved config (updates screenWidth/screenHeight)
     settings_apply_display(&state.settings, &screenWidth, &screenHeight);
+
+    // Virtual resolution render target — all game drawing goes here at 1280×720,
+    // then this is scaled/letterboxed onto the actual window each frame.
+    RenderTexture2D virtual_rt = LoadRenderTexture(VIRTUAL_W, VIRTUAL_H);
 
     // Initialize audio (needed for menu sounds)
     audio_init(&state.audio);
@@ -133,7 +137,7 @@ int main(void)
 #ifdef DEV_MODE
     DebugState debug{};
     debug_init(&debug);
-    register_load_level(&debug, &state, screenWidth, screenHeight);
+    register_load_level(&debug, &state, VIRTUAL_W, VIRTUAL_H);
 #endif
 
     // Start at main menu
@@ -143,6 +147,19 @@ int main(void)
     {
         float real_dt = GetFrameTime();
         float dt = real_dt * state.time_scale;
+
+        // ── Virtual screen transform (reused for mouse and final blit) ─
+        float vscale    = std::min(screenWidth  / (float)VIRTUAL_W,
+                                   screenHeight / (float)VIRTUAL_H);
+        float voffset_x = (screenWidth  - VIRTUAL_W * vscale) * 0.5f;
+        float voffset_y = (screenHeight - VIRTUAL_H * vscale) * 0.5f;
+
+        // Transform actual mouse into virtual 1280×720 space
+        Vector2 raw_mouse = GetMousePosition();
+        state.virtual_mouse = {
+            (raw_mouse.x - voffset_x) / vscale,
+            (raw_mouse.y - voffset_y) / vscale
+        };
 
         // ── Debug update (runs first, may consume Escape) ─────────────
         bool input_blocked   = false;
@@ -160,11 +177,13 @@ int main(void)
         {
             case GameStateMode::MAIN_MENU:
             {
-                MainMenuAction action = main_menu_update(&main_menu, &state.audio, dt, screenWidth, screenHeight);
+                MainMenuAction action = main_menu_update(&main_menu, &state.audio, dt,
+                                                         VIRTUAL_W, VIRTUAL_H,
+                                                         state.virtual_mouse);
                 switch (action)
                 {
                     case MainMenuAction::Play:
-                        gameplay_init(&state, screenWidth, screenHeight);
+                        gameplay_init(&state, VIRTUAL_W, VIRTUAL_H);
                         state.mode = GameStateMode::PLAYING;
                         break;
                     case MainMenuAction::Options:
@@ -208,14 +227,16 @@ int main(void)
                 // Update gameplay or pause menu
                 if (state.paused)
                 {
-                    PauseAction action = pause_menu_update(&pause_menu, &state.audio, dt, screenWidth, screenHeight);
+                    PauseAction action = pause_menu_update(&pause_menu, &state.audio, dt,
+                                                           VIRTUAL_W, VIRTUAL_H,
+                                                           state.virtual_mouse);
                     switch (action)
                     {
                         case PauseAction::Resume:
                             state.paused = false;
                             break;
                         case PauseAction::Restart:
-                            gameplay_reload_level(&state, screenWidth, screenHeight);
+                            gameplay_reload_level(&state, VIRTUAL_W, VIRTUAL_H);
                             state.paused = false;
                             break;
                         case PauseAction::Options:
@@ -236,7 +257,7 @@ int main(void)
                 }
                 else
                 {
-                    gameplay_update(&state, dt, screenWidth, screenHeight,
+                    gameplay_update(&state, dt, VIRTUAL_W, VIRTUAL_H,
                                     input_blocked || state.paused);
                 }
 
@@ -245,11 +266,11 @@ int main(void)
 
             case GameStateMode::OPTIONS_MAIN:
             {
-                OptionsAction action = options_menu_update(&options_menu, dt, screenWidth, screenHeight);
+                // options_menu still receives actual screen size pointers so it can resize the window
+                OptionsAction action = options_menu_update(&options_menu, dt, &screenWidth, &screenHeight);
                 if (action == OptionsAction::Back)
                 {
                     settings_save(&state.settings);
-                    // Apply audio settings
                     audio_set_master_volume(&state.audio, state.settings.master_volume);
                     audio_set_sfx_volume(&state.audio, state.settings.sfx_volume);
                     audio_set_music_volume(&state.audio, state.settings.music_volume);
@@ -261,11 +282,10 @@ int main(void)
 
             case GameStateMode::OPTIONS_PAUSE:
             {
-                OptionsAction action = options_menu_update(&options_menu, dt, screenWidth, screenHeight);
+                OptionsAction action = options_menu_update(&options_menu, dt, &screenWidth, &screenHeight);
                 if (action == OptionsAction::Back)
                 {
                     settings_save(&state.settings);
-                    // Apply audio settings
                     audio_set_master_volume(&state.audio, state.settings.master_volume);
                     audio_set_sfx_volume(&state.audio, state.settings.sfx_volume);
                     audio_set_music_volume(&state.audio, state.settings.music_volume);
@@ -276,14 +296,14 @@ int main(void)
             }
         }
 
-        // ── Draw to screen ────────────────────────────────────────────
         BeginDrawing();
+        ClearBackground(BLACK);
 
+        // ── Step 1: render world into capture_rt (sequential, not nested) ──
         if (state.mode == GameStateMode::PLAYING)
         {
             gameplay_prepare_draw(&state);
 
-            // Render gameplay into capture texture
             BeginTextureMode(state.replay.capture_rt);
                 ClearBackground(Color{30, 28, 36, 255});
                 BeginMode2D(state.camera.cam);
@@ -292,50 +312,72 @@ int main(void)
                     debug_draw_world(&debug, &state);
 #endif
                 EndMode2D();
-                gameplay_draw_hud(&state, screenWidth, screenHeight);
-            EndTextureMode();
+                gameplay_draw_hud(&state, VIRTUAL_W, VIRTUAL_H);
+            EndTextureMode();  // back to screen FBO
 
-            // Feed capture into replay buffer during live play AND during slow-mo
-            if (!replay_is_active(&state.replay))
-                replay_capture_frame(&state.replay);
+            const bool fatal_frame =
+                state.player_dead &&
+                state.death_slowmo_timer <= 0.0f &&
+                !state.replay.snapshot_valid;
 
-            // Draw gameplay or replay
+            const bool allow_replay_capture =
+                !replay_is_active(&state.replay) &&
+                (!state.player_dead || fatal_frame);
+
+            if (allow_replay_capture)
+                replay_capture_frame(&state.replay, real_dt, fatal_frame);
+
+            if (fatal_frame)
+                replay_snapshot(&state.replay);
+        }
+
+        // ── Step 2: compose into virtual_rt (sequential, not nested) ───
+        BeginTextureMode(virtual_rt);
+
+        if (state.mode == GameStateMode::PLAYING)
+        {
             if (replay_is_active(&state.replay))
             {
-                replay_draw(&state.replay, screenWidth, screenHeight);
+                replay_draw(&state.replay, VIRTUAL_W, VIRTUAL_H);
             }
             else
             {
                 ClearBackground(Color{30, 28, 36, 255});
                 Rectangle src = { 0.0f, 0.0f,
-                    (float)screenWidth, -(float)screenHeight };
+                    (float)VIRTUAL_W, -(float)VIRTUAL_H };
                 Rectangle dst = { 0.0f, 0.0f,
-                    (float)screenWidth, (float)screenHeight };
+                    (float)VIRTUAL_W, (float)VIRTUAL_H };
                 DrawTexturePro(state.replay.capture_rt.texture,
                                src, dst, { 0.0f, 0.0f }, 0.0f, WHITE);
             }
 
-            // Draw pause menu if paused
             if (state.paused)
-                pause_menu_draw(&pause_menu, screenWidth, screenHeight);
+                pause_menu_draw(&pause_menu, VIRTUAL_W, VIRTUAL_H);
         }
         else if (state.mode == GameStateMode::MAIN_MENU)
         {
             ClearBackground(Color{30, 28, 36, 255});
-            main_menu_draw(&main_menu, screenWidth, screenHeight);
+            main_menu_draw(&main_menu, VIRTUAL_W, VIRTUAL_H);
         }
         else if (state.mode == GameStateMode::OPTIONS_MAIN || state.mode == GameStateMode::OPTIONS_PAUSE)
         {
             ClearBackground(Color{30, 28, 36, 255});
-            options_menu_draw(&options_menu, screenWidth, screenHeight);
+            options_menu_draw(&options_menu, VIRTUAL_W, VIRTUAL_H);
         }
 
 #ifdef DEV_MODE
-        debug_draw_ui(&debug, &state, screenWidth, screenHeight);
+        debug_draw_ui(&debug, &state, VIRTUAL_W, VIRTUAL_H);
 #endif
 
         if (state.settings.show_fps)
-            DrawFPS(screenWidth - 90, 10);
+            DrawFPS(VIRTUAL_W - 90, 10);
+
+        EndTextureMode();  // back to screen FBO
+
+        // ── Step 3: letterbox virtual_rt onto the actual window ─────────
+        Rectangle src = { 0.0f, 0.0f, (float)VIRTUAL_W, -(float)VIRTUAL_H };
+        Rectangle dst = { voffset_x, voffset_y, VIRTUAL_W * vscale, VIRTUAL_H * vscale };
+        DrawTexturePro(virtual_rt.texture, src, dst, { 0.0f, 0.0f }, 0.0f, WHITE);
 
         EndDrawing();
     }
@@ -346,6 +388,7 @@ cleanup:
     if (state.mode == GameStateMode::PLAYING)
         gameplay_cleanup(&state);
     audio_cleanup(&state.audio);
+    UnloadRenderTexture(virtual_rt);
     CloseWindow();
     return 0;
 }

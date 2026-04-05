@@ -35,8 +35,8 @@ struct OptionsMenu {
 // Initialize the options menu (shows all sections)
 void options_menu_init(OptionsMenu *menu, OptionsSection section, Settings *settings, AudioState *audio);
 
-// Update navigation and value changes
-OptionsAction options_menu_update(OptionsMenu *menu, float dt, int screen_w, int screen_h);
+// Update navigation and value changes; updates *screen_w/*screen_h if resolution changes
+OptionsAction options_menu_update(OptionsMenu *menu, float dt, int *screen_w, int *screen_h);
 
 // Draw the options menu
 void options_menu_draw(const OptionsMenu *menu, int screen_w, int screen_h);

@@ -1,5 +1,6 @@
 #include "replay.h"
 #include "game.h"  // assets_path()
+#include <cmath>
 
 // ── Init / cleanup ────────────────────────────────────────────────────────────
 
@@ -26,11 +27,15 @@ void replay_cleanup(ReplaySystem *r)
 
 // ── Capture ───────────────────────────────────────────────────────────────────
 
-void replay_capture_frame(ReplaySystem *r)
+void replay_capture_frame(ReplaySystem *r, float real_dt, bool force)
 {
-    r->skip_count++;
-    if (r->skip_count < 2) return;  // capture every 2nd frame → 30 fps effective
-    r->skip_count = 0;
+    const float capture_step = 1.0f / ReplaySystem::CAPTURE_FPS;
+    r->capture_accum += real_dt;
+
+    if (!force && r->capture_accum < capture_step)
+        return;
+
+    r->capture_accum = force ? 0.0f : std::fmod(r->capture_accum, capture_step);
 
     // Blit capture_rt → current buffer slot at reduced resolution.
     // Both are render textures (Y-flipped storage), so using positive source height
@@ -53,22 +58,37 @@ void replay_reset_buffer(ReplaySystem *r)
 {
     r->write_head  = 0;
     r->frame_count = 0;
-    r->skip_count  = 0;
+    r->capture_accum = 0.0f;
     r->phase       = ReplaySystem::Phase::NONE;
+    r->snapshot_write_head  = 0;
+    r->snapshot_frame_count = 0;
+    r->snapshot_valid       = false;
+}
+
+void replay_snapshot(ReplaySystem *r)
+{
+    if (!r) return;
+    r->snapshot_write_head  = r->write_head;
+    r->snapshot_frame_count = r->frame_count;
+    r->snapshot_valid       = true;
 }
 
 // ── Sequence control ──────────────────────────────────────────────────────────
 
 void replay_trigger(ReplaySystem *r)
 {
+    const int snapshot_write_head  = r->snapshot_valid ? r->snapshot_write_head  : r->write_head;
+    const int snapshot_frame_count = r->snapshot_valid ? r->snapshot_frame_count : r->frame_count;
+
     // Snapshot which frames are valid and where playback should start.
-    r->play_count = r->frame_count;
-    r->play_start = (r->frame_count < ReplaySystem::BUFFER_SIZE)
+    r->play_count = snapshot_frame_count;
+    r->play_start = (snapshot_frame_count < ReplaySystem::BUFFER_SIZE)
         ? 0                 // buffer not yet full: oldest = slot 0
-        : r->write_head;    // buffer full: oldest = the slot we'd write next
+        : snapshot_write_head; // buffer full: oldest = the slot we'd write next
     r->read_pos  = 0.0f;
     r->vhs_time  = 0.0f;
     r->phase     = ReplaySystem::Phase::GLITCH;
+    r->snapshot_valid = false;
 }
 
 bool replay_update(ReplaySystem *r, float dt)

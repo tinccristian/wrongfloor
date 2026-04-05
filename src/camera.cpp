@@ -13,6 +13,7 @@ void camera_update(GameCamera *gc, Vector2 target, const Tilemap *tm,
 {
     (void)dt;
     gc->cam.target = target;
+    gc->cam.offset = { screen_w * 0.5f, screen_h * 0.5f };
 
     // Clamp so the viewport never shows past map edges
     if (tm && tm->map_width > 0 && tm->map_height > 0)

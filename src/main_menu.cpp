@@ -81,7 +81,7 @@ void main_menu_init(MainMenu *menu)
         menu->splash = LoadTexture(assets_path("splash.png").c_str());
 }
 
-MainMenuAction main_menu_update(MainMenu *menu, AudioState *audio, float dt, int screen_w, int screen_h)
+MainMenuAction main_menu_update(MainMenu *menu, AudioState *audio, float dt, int screen_w, int screen_h, Vector2 virtual_mouse)
 {
     int count = (int)menu->items.size();
 
@@ -101,7 +101,7 @@ MainMenuAction main_menu_update(MainMenu *menu, AudioState *audio, float dt, int
     }
 
     // ── Mouse hover ───────────────────────────────────────────────────
-    Vector2 mouse = GetMousePosition();
+    Vector2 mouse = virtual_mouse;
     for (int i = 0; i < count; ++i)
     {
         if (CheckCollisionPointRec(mouse, item_rect(menu, i, screen_w, screen_h)))

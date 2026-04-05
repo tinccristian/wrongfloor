@@ -130,11 +130,17 @@ void settings_apply_display(const Settings *settings, int *screen_w, int *screen
             break;
     }
 
-    // Apply VSync
+    // Apply VSync — when on, vsync drives frame pacing; when off, run uncapped
     if (settings->vsync)
+    {
         SetWindowState(FLAG_VSYNC_HINT);
+        SetTargetFPS(0);
+    }
     else
+    {
         ClearWindowState(FLAG_VSYNC_HINT);
+        SetTargetFPS(0);
+    }
 
     if (screen_w) *screen_w = res.w;
     if (screen_h) *screen_h = res.h;

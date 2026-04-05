@@ -32,6 +32,11 @@ inline std::string assets_path(const std::string& rel)
 #endif
 }
 
+// Virtual (design) resolution — all game logic and rendering operates in this space.
+// The final frame is scaled to fit the actual window with letterboxing.
+inline constexpr int VIRTUAL_W = 1280;
+inline constexpr int VIRTUAL_H = 720;
+
 struct GameState {
     Player        player;
     BulletSystem  bullets;
@@ -57,6 +62,10 @@ struct GameState {
     // main.cpp drives death_slowmo_timer in real time; resets to 1.0 after transition.
     float time_scale          = 1.0f;
     float death_slowmo_timer  = 0.0f;
+
+    // Mouse position transformed into virtual 1280x720 space.
+    // Computed once per frame in main.cpp before any update calls.
+    Vector2 virtual_mouse = { 0.0f, 0.0f };
 };
 
 // Level file names (relative to assets root — prepend via assets_path())
