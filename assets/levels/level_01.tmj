@@ -72,6 +72,12 @@
                  "name":"enemy",
                  "opacity":1,
                  "point":true,
+                 "properties":[
+                        {
+                         "name":"weapon_type",
+                         "type":"string",
+                         "value":"saber"
+                        }],
                  "rotation":0,
                  "type":"",
                  "visible":true,
@@ -85,6 +91,12 @@
                  "name":"enemy",
                  "opacity":1,
                  "point":true,
+                 "properties":[
+                        {
+                         "name":"weapon_type",
+                         "type":"string",
+                         "value":"dagger"
+                        }],
                  "rotation":0,
                  "type":"",
                  "visible":true,

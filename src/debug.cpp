@@ -5,6 +5,7 @@
 #include <algorithm>
 #include <cstdio>
 #include <cctype>
+#include <cstring>
 
 static constexpr int   MAX_OUTPUT_LINES = 200;
 static constexpr int   MAX_INPUT_LEN    = 256;
@@ -22,6 +23,18 @@ static const char *player_state_name(PlayerState s)
         case PLAYER_WALKING:   return "WALKING";
         case PLAYER_RUNNING:   return "RUNNING";
         default:               return "UNKNOWN";
+    }
+}
+
+static Color sound_event_color(SoundEventType type)
+{
+    switch (type)
+    {
+        case SoundEventType::FOOTSTEP: return Color{120, 255, 140, 180};
+        case SoundEventType::GUNSHOT:  return Color{255, 120, 80, 180};
+        case SoundEventType::IMPACT:   return Color{120, 200, 255, 180};
+        case SoundEventType::GENERIC:
+        default:                       return Color{220, 220, 220, 180};
     }
 }
 
@@ -200,10 +213,22 @@ void debug_init(DebugState *d)
             push_output(ds, std::string("showVisionCones: ") + (ds->show_vision_cones ? "ON" : "OFF"));
         });
 
-    debug_register_command(d, "showSoundEvents", "Toggle sound-event and investigation target overlay",
+    debug_register_command(d, "showSoundEvents", "Toggle sound-event circle overlay",
         [](DebugState *ds, const std::string&) {
             ds->show_sound_events = !ds->show_sound_events;
             push_output(ds, std::string("showSoundEvents: ") + (ds->show_sound_events ? "ON" : "OFF"));
+        });
+
+    debug_register_command(d, "showEnemyState", "Toggle enemy AI state labels",
+        [](DebugState *ds, const std::string&) {
+            ds->show_enemy_state_labels = !ds->show_enemy_state_labels;
+            push_output(ds, std::string("showEnemyState: ") + (ds->show_enemy_state_labels ? "ON" : "OFF"));
+        });
+
+    debug_register_command(d, "showAITargets", "Toggle enemy last-known and investigation target overlay",
+        [](DebugState *ds, const std::string&) {
+            ds->show_ai_targets = !ds->show_ai_targets;
+            push_output(ds, std::string("showAITargets: ") + (ds->show_ai_targets ? "ON" : "OFF"));
         });
 }
 
@@ -386,11 +411,15 @@ void debug_draw_world(const DebugState *d, const GameState *state)
     {
         for (const auto& event : state->sound_events.events)
         {
+            Color color = sound_event_color(event.type);
             DrawCircleLines((int)event.position.x, (int)event.position.y, event.radius,
-                            Color{80, 220, 255, 170});
-            DrawCircleV(event.position, 3.0f, Color{80, 220, 255, 220});
+                            color);
+            DrawCircleV(event.position, 3.0f, color);
         }
+    }
 
+    if (d->show_ai_targets)
+    {
         for (const auto& enemy : state->enemies.enemies)
         {
             if (!enemy.alive) continue;
@@ -406,6 +435,47 @@ void debug_draw_world(const DebugState *d, const GameState *state)
                 DrawLineV(enemy.position, enemy.last_known_player_pos, Color{255, 160, 80, 160});
                 DrawCircleV(enemy.last_known_player_pos, 4.0f, Color{255, 160, 80, 220});
             }
+        }
+    }
+
+    if (d->show_enemy_state_labels)
+    {
+        for (const auto& enemy : state->enemies.enemies)
+        {
+            if (!enemy.alive) continue;
+
+            char label[96];
+            char flags[32] = "";
+            bool has_flags = false;
+            if (enemy.can_currently_see_player)
+            {
+                std::snprintf(flags + std::strlen(flags), sizeof(flags) - std::strlen(flags), "%sSEE",
+                              has_flags ? "," : "");
+                has_flags = true;
+            }
+            if (enemy.has_last_known_player_pos)
+            {
+                std::snprintf(flags + std::strlen(flags), sizeof(flags) - std::strlen(flags), "%sLKP",
+                              has_flags ? "," : "");
+                has_flags = true;
+            }
+            if (enemy.has_investigation_target)
+            {
+                std::snprintf(flags + std::strlen(flags), sizeof(flags) - std::strlen(flags), "%sINV",
+                              has_flags ? "," : "");
+                has_flags = true;
+            }
+
+            if (has_flags)
+                std::snprintf(label, sizeof(label), "%s [%s]", enemy_ai_state_name(enemy.ai_state), flags);
+            else
+                std::snprintf(label, sizeof(label), "%s", enemy_ai_state_name(enemy.ai_state));
+
+            int fs = 10;
+            int tx = (int)enemy.position.x - MeasureText(label, fs) / 2;
+            int ty = (int)(enemy.position.y - ENEMY_HITBOX_H * 0.5f - 18.0f);
+            DrawText(label, tx + 1, ty + 1, fs, BLACK);
+            DrawText(label, tx, ty, fs, Color{255, 230, 140, 230});
         }
     }
 
