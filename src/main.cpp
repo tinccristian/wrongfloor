@@ -12,6 +12,9 @@
 #include <filesystem>
 #include <algorithm>
 #include <cctype>
+#include <cstdio>
+#include <cstdlib>
+#include <sstream>
 
 // Scan assets/levels/ for .tmj files and return filenames (not full paths).
 // Called at startup and on each loadLevel execution to pick up new files.
@@ -33,6 +36,231 @@ static std::vector<std::string> scan_level_files()
         return la < lb;
     });
     return files;
+}
+
+static std::string trim_copy(const std::string& s)
+{
+    size_t a = s.find_first_not_of(" \t");
+    size_t b = s.find_last_not_of(" \t");
+    if (a == std::string::npos) return "";
+    return s.substr(a, b - a + 1);
+}
+
+static bool try_parse_float_arg(const std::string& s, float *out_value)
+{
+    std::string trimmed = trim_copy(s);
+    if (trimmed.empty()) return false;
+
+    char *end = nullptr;
+    float value = std::strtof(trimmed.c_str(), &end);
+    if (end == trimmed.c_str() || *end != '\0')
+        return false;
+
+    if (out_value) *out_value = value;
+    return true;
+}
+
+static void register_ai_debug_commands(DebugState *debug, GameState *state)
+{
+    debug_register_command(debug, "ai_state_labels",
+        "Toggle enemy AI state labels above enemies",
+        [](DebugState *ds, const std::string&) {
+            ds->show_enemy_state_labels = !ds->show_enemy_state_labels;
+            debug_print(ds, std::string("ai_state_labels: ") +
+                              (ds->show_enemy_state_labels ? "ON" : "OFF"));
+        });
+
+    debug_register_command(debug, "ai_target_debug",
+        "Toggle enemy investigation/last-known target lines and markers",
+        [](DebugState *ds, const std::string&) {
+            ds->show_ai_targets = !ds->show_ai_targets;
+            debug_print(ds, std::string("ai_target_debug: ") +
+                              (ds->show_ai_targets ? "ON" : "OFF"));
+        });
+
+    debug_register_command(debug, "sound_debug",
+        "Toggle active sound-event circle rendering",
+        [](DebugState *ds, const std::string&) {
+            ds->show_sound_events = !ds->show_sound_events;
+            debug_print(ds, std::string("sound_debug: ") +
+                              (ds->show_sound_events ? "ON" : "OFF"));
+        });
+
+    debug_register_command(debug, "sound_clear",
+        "Clear all active sound events",
+        [state](DebugState *ds, const std::string&) {
+            sound_events_clear(&state->sound_events);
+            debug_print(ds, "sound_clear: cleared");
+        });
+
+    debug_register_command(debug, "sound_spawn",
+        "Spawn a test sound at the player. Usage: sound_spawn [radius]",
+        [state](DebugState *ds, const std::string& args) {
+            if (state->mode != GameStateMode::PLAYING)
+            {
+                debug_print(ds, "sound_spawn: only available during gameplay");
+                return;
+            }
+
+            float radius = sound_events_get_impact_radius();
+            float parsed = 0.0f;
+            if (!trim_copy(args).empty())
+            {
+                if (!try_parse_float_arg(args, &parsed))
+                {
+                    debug_print(ds, "Usage: sound_spawn [radius]");
+                    return;
+                }
+                radius = parsed;
+            }
+
+            Vector2 pos = player_center(&state->player);
+            sound_events_push(&state->sound_events, pos, radius, 0.30f, SoundEventType::GENERIC);
+
+            char buf[96];
+            std::snprintf(buf, sizeof(buf), "sound_spawn: radius %.1f at player", radius);
+            debug_print(ds, buf);
+        });
+
+    debug_register_command(debug, "ai_search_time",
+        "Print or set enemy search duration. Usage: ai_search_time [seconds]",
+        [](DebugState *ds, const std::string& args) {
+            float parsed = 0.0f;
+            if (trim_copy(args).empty())
+            {
+                char buf[96];
+                std::snprintf(buf, sizeof(buf), "ai_search_time: %.2f", enemies_get_search_time());
+                debug_print(ds, buf);
+                return;
+            }
+
+            if (!try_parse_float_arg(args, &parsed))
+            {
+                debug_print(ds, "Usage: ai_search_time [seconds]");
+                return;
+            }
+
+            enemies_set_search_time(parsed);
+            char buf[96];
+            std::snprintf(buf, sizeof(buf), "ai_search_time set to %.2f", enemies_get_search_time());
+            debug_print(ds, buf);
+        });
+
+    debug_register_command(debug, "ai_memory_time",
+        "Print or set enemy memory duration. Usage: ai_memory_time [seconds]",
+        [](DebugState *ds, const std::string& args) {
+            float parsed = 0.0f;
+            if (trim_copy(args).empty())
+            {
+                char buf[96];
+                std::snprintf(buf, sizeof(buf), "ai_memory_time: %.2f", enemies_get_memory_time());
+                debug_print(ds, buf);
+                return;
+            }
+
+            if (!try_parse_float_arg(args, &parsed))
+            {
+                debug_print(ds, "Usage: ai_memory_time [seconds]");
+                return;
+            }
+
+            enemies_set_memory_time(parsed);
+            char buf[96];
+            std::snprintf(buf, sizeof(buf), "ai_memory_time set to %.2f", enemies_get_memory_time());
+            debug_print(ds, buf);
+        });
+
+    debug_register_command(debug, "sound_range",
+        "Print or set sound radii. Usage: sound_range [footstep|rifle|deagle|impact] [value]",
+        [](DebugState *ds, const std::string& args) {
+            std::istringstream ss(args);
+            std::string type;
+            std::string value_token;
+            ss >> type >> value_token;
+
+            if (type.empty())
+            {
+                char buf[160];
+                std::snprintf(buf, sizeof(buf),
+                    "sound_range: footstep=%.1f rifle=%.1f deagle=%.1f impact=%.1f",
+                    sound_events_get_footstep_radius(),
+                    sound_events_get_rifle_radius(),
+                    sound_events_get_deagle_radius(),
+                    sound_events_get_impact_radius());
+                debug_print(ds, buf);
+                return;
+            }
+
+            auto print_single = [&](const char *name, float value) {
+                char buf[96];
+                std::snprintf(buf, sizeof(buf), "sound_range %s: %.1f", name, value);
+                debug_print(ds, buf);
+            };
+
+            auto set_single = [&](const char *name, float *current,
+                                  void (*setter)(float), float parsed_value) {
+                (void)current;
+                setter(parsed_value);
+                char buf[96];
+                std::snprintf(buf, sizeof(buf), "sound_range %s set to %.1f", name, parsed_value);
+                debug_print(ds, buf);
+            };
+
+            float parsed = 0.0f;
+            bool has_value = !value_token.empty();
+            if (has_value && !try_parse_float_arg(value_token, &parsed))
+            {
+                debug_print(ds, "Usage: sound_range [footstep|rifle|deagle|impact] [value]");
+                return;
+            }
+
+            if (type == "footstep")
+            {
+                if (has_value) set_single("footstep", nullptr, sound_events_set_footstep_radius, parsed);
+                else print_single("footstep", sound_events_get_footstep_radius());
+            }
+            else if (type == "rifle")
+            {
+                if (has_value) set_single("rifle", nullptr, sound_events_set_rifle_radius, parsed);
+                else print_single("rifle", sound_events_get_rifle_radius());
+            }
+            else if (type == "deagle")
+            {
+                if (has_value) set_single("deagle", nullptr, sound_events_set_deagle_radius, parsed);
+                else print_single("deagle", sound_events_get_deagle_radius());
+            }
+            else if (type == "impact")
+            {
+                if (has_value) set_single("impact", nullptr, sound_events_set_impact_radius, parsed);
+                else print_single("impact", sound_events_get_impact_radius());
+            }
+            else
+            {
+                debug_print(ds, "Usage: sound_range [footstep|rifle|deagle|impact] [value]");
+            }
+        },
+        [](const std::string& prefix) -> std::vector<std::string> {
+            const std::vector<std::string> types = { "footstep", "rifle", "deagle", "impact" };
+            std::vector<std::string> matches;
+            std::string lower = prefix;
+            for (char& c : lower) c = (char)std::tolower((unsigned char)c);
+            for (const auto& type : types)
+            {
+                std::string type_lower = type;
+                for (char& c : type_lower) c = (char)std::tolower((unsigned char)c);
+                if (type_lower.rfind(lower, 0) == 0)
+                    matches.push_back(type);
+            }
+            return matches;
+        });
+
+    debug_register_command(debug, "ai_reset",
+        "Reset enemy investigation state and clear active sound events",
+        [state](DebugState *ds, const std::string&) {
+            enemies_reset_perception(&state->enemies);
+            sound_events_clear(&state->sound_events);
+            debug_print(ds, "ai_reset: enemies set to IDLE and sound events cleared");
+        });
 }
 
 static void register_load_level(DebugState *debug, GameState *state,
@@ -138,6 +366,7 @@ int main(void)
 #ifdef DEV_MODE
     DebugState debug{};
     debug_init(&debug);
+    register_ai_debug_commands(&debug, &state);
     register_load_level(&debug, &state, VIRTUAL_W, VIRTUAL_H);
 #endif
 
@@ -202,7 +431,7 @@ int main(void)
             case GameStateMode::PLAYING:
             {
                 // Drive death slow-mo timer in real time; trigger replay once 1s has elapsed.
-                static constexpr float SLOWMO_DURATION = 1.0f;
+                static constexpr float SLOWMO_DURATION = 0.2f;
                 if (state.player_dead && !replay_is_active(&state.replay))
                 {
                     state.death_slowmo_timer += real_dt;
@@ -213,8 +442,9 @@ int main(void)
                     }
                 }
 
-                // Pause toggle
+                // Pause toggle — blocked while replay is playing
                 bool pause_pressed = !escape_consumed &&
+                    !replay_is_active(&state.replay) &&
                     (IsKeyPressed(KEY_ESCAPE) ||
                      IsGamepadButtonPressed(0, GAMEPAD_BUTTON_MIDDLE_RIGHT));
 

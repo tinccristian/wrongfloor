@@ -9,7 +9,7 @@ struct ReplaySystem {
     static constexpr int   CAPTURE_W    = 640;
     static constexpr int   CAPTURE_H    = 360;
     static constexpr float CAPTURE_FPS  = 30.0f;
-    static constexpr float REPLAY_SPEED = 1.0f;
+    static constexpr float REPLAY_SPEED = 3.0f;   // 3x = ~1s playback for 90 frames at 30fps
     static constexpr float BLACKOUT_DUR = 0.2f;   // black-screen duration after replay
 
     // Circular frame buffer — each slot is a render texture at CAPTURE_W x CAPTURE_H.
@@ -28,7 +28,7 @@ struct ReplaySystem {
     int    glitch_strength_loc = -1;
 
     // Replay sequence state.
-    static constexpr float GLITCH_DUR = 0.35f; // glitch phase before playback starts
+    static constexpr float GLITCH_DUR = 0.2f;  // freeze frame before playback starts
     enum class Phase { NONE, GLITCH, REPLAY, BLACKOUT } phase = Phase::NONE;
     float vhs_time   = 0.0f;  // cumulative time during replay (jitter seed)
     float read_pos   = 0.0f;  // fractional frame index into the play sequence
