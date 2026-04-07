@@ -49,6 +49,7 @@ struct DebugState {
     bool show_sound_events     = false;
     bool show_ai_targets       = false;
     bool show_enemy_state_labels = false;
+    bool show_doors            = false;
 
     // ── Command registry ──────────────────────────────────────────────
     std::map<std::string, DebugCommand> commands;

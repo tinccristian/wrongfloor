@@ -11,6 +11,7 @@
 #include "replay.h"
 #include "sound_events.h"
 #include "settings.h"
+#include "door.h"
 #include <string>
 
 // Game state machine: which screen/mode are we in?
@@ -49,6 +50,7 @@ struct GameState {
     WeaponManager weapons;
     ReplaySystem  replay;
     SoundEventSystem sound_events;
+    DoorSystem    doors;
     Settings      settings;
 
     // Game state machine

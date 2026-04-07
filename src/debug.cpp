@@ -230,6 +230,12 @@ void debug_init(DebugState *d)
             ds->show_ai_targets = !ds->show_ai_targets;
             push_output(ds, std::string("showAITargets: ") + (ds->show_ai_targets ? "ON" : "OFF"));
         });
+
+    debug_register_command(d, "showDoors", "Toggle door hitbox/hinge/state overlay",
+        [](DebugState *ds, const std::string&) {
+            ds->show_doors = !ds->show_doors;
+            push_output(ds, std::string("showDoors: ") + (ds->show_doors ? "ON" : "OFF"));
+        });
 }
 
 bool debug_update(DebugState *d, float dt)
@@ -476,6 +482,42 @@ void debug_draw_world(const DebugState *d, const GameState *state)
             int ty = (int)(enemy.position.y - ENEMY_HITBOX_H * 0.5f - 18.0f);
             DrawText(label, tx + 1, ty + 1, fs, BLACK);
             DrawText(label, tx, ty, fs, Color{255, 230, 140, 230});
+        }
+    }
+
+    // ── Door debug overlay ────────────────────────────────────────────
+    if (d->show_doors)
+    {
+        for (const auto& door : state->doors.doors)
+        {
+            // Outline rectangle
+            float ca = cosf(door.angle), sa = sinf(door.angle);
+            float half_t = door.thickness * 0.5f;
+            Vector2 along = { ca, sa };
+            Vector2 perp  = { -sa, ca };
+            Vector2 ht = { door.hinge_position.x + perp.x * half_t,
+                            door.hinge_position.y + perp.y * half_t };
+            Vector2 hb = { door.hinge_position.x - perp.x * half_t,
+                            door.hinge_position.y - perp.y * half_t };
+            Vector2 ft = { ht.x + along.x * door.length, ht.y + along.y * door.length };
+            Vector2 fb = { hb.x + along.x * door.length, hb.y + along.y * door.length };
+            Color outline = door.is_open ? Color{80, 255, 140, 200} : Color{255, 200, 60, 200};
+            DrawLineEx(ht, ft, 1.5f, outline);
+            DrawLineEx(hb, fb, 1.5f, outline);
+            DrawLineEx(ft, fb, 1.5f, outline);
+            DrawLineEx(ht, hb, 1.5f, outline);
+
+            // Hinge point
+            DrawCircleV(door.hinge_position, 4.0f, Color{255, 80, 80, 240});
+
+            // Angle and state label
+            char buf[64];
+            snprintf(buf, sizeof(buf), "%.1f rad  %s",
+                     door.angle, door.is_open ? "OPEN" : "CLOSED");
+            int tx = (int)(door.hinge_position.x + along.x * door.length * 0.5f) - 20;
+            int ty = (int)(door.hinge_position.y + along.y * door.length * 0.5f) - 18;
+            DrawText(buf, tx + 1, ty + 1, 10, BLACK);
+            DrawText(buf, tx,     ty,     10, outline);
         }
     }
 

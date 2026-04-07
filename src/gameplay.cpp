@@ -19,6 +19,9 @@ static void load_level(GameState *state, int index, int screen_w, int screen_h)
     weapons_clear(&state->weapons);
     weapons_load_from_tilemap(&state->weapons, &state->tilemap);
 
+    doors_clear(&state->doors);
+    doors_load_from_tilemap(&state->doors, &state->tilemap);
+
     camera_init(&state->camera, player_center(&state->player), screen_w, screen_h);
     state->current_level = index;
 
@@ -116,6 +119,15 @@ void gameplay_update(GameState *state, float dt, int screen_w, int screen_h, boo
     collision_bullets_vs_enemies(&state->bullets, &state->enemies, &state->effects,
                                  &state->weapons);
 
+    if (doors_update(&state->doors, &state->player, &state->enemies,
+                     &state->bullets, &state->weapons, &state->effects, dt))
+    {
+        state->player_dead      = true;
+        state->time_scale       = 0.15f;
+        state->death_slowmo_timer = 0.0f;
+        return;
+    }
+
     if (collision_bullets_vs_player(&state->bullets, &state->player, &state->effects))
     {
         state->player_dead      = true;
@@ -160,6 +172,7 @@ void gameplay_draw_world(GameState *state)
     tilemap_draw_layers_prefixed(&state->tilemap, "background");
     tilemap_draw_layers_prefixed(&state->tilemap, "midground");
     effects_draw_stains(&state->effects);
+    doors_draw(&state->doors);
     enemies_draw(&state->enemies);
 
     bool controller_active = (state->player.aim.active_input_mode == AIM_GAMEPAD);
