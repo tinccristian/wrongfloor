@@ -18,6 +18,14 @@ void collision_bullets_vs_enemies(BulletSystem *bullets, EnemyManager *enemies,
 bool collision_bullets_vs_player(BulletSystem *bullets, const Player *player,
                                  EffectsSystem *effects);
 
+// Check a melee weapon's hitbox against the player.
+// weapon:     the melee weapon (provides range, width, cone_half_angle)
+// holder_pos: world-space center of whoever is swinging (enemy position)
+// aim_dir:    normalized aim direction
+// Returns true if the player was hit (caller handles death + blood).
+bool collision_melee_vs_player(const Weapon *weapon, Vector2 holder_pos, Vector2 aim_dir,
+                               const Player *player, EffectsSystem *effects);
+
 // Check a melee hitbox against all alive enemies.
 // origin:          start of the hitbox (typically player center + orbit offset)
 // aim_dir:         normalized aim direction

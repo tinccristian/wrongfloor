@@ -126,9 +126,18 @@ void gameplay_update(GameState *state, float dt, int screen_w, int screen_h, boo
 
     emit_player_sound_events(triggers, state);
     effects_update(&state->effects, &state->tilemap, dt);
-    enemies_update(&state->enemies, &state->bullets, &state->audio,
-                   &state->tilemap, &state->sound_events,
-                   player_center(&state->player), dt);
+
+    if (enemies_update(&state->enemies, &state->bullets, &state->audio,
+                       &state->tilemap, &state->sound_events,
+                       player_center(&state->player), dt,
+                       &state->player, &state->effects))
+    {
+        state->player_dead      = true;
+        state->time_scale       = 0.15f;
+        state->death_slowmo_timer = 0.0f;
+        return;
+    }
+
     sound_events_update(&state->sound_events, dt);
     camera_update(&state->camera, player_center(&state->player), &state->tilemap,
                   screen_w, screen_h, dt);

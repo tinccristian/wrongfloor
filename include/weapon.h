@@ -139,3 +139,8 @@ public:
 protected:
     Weapon() = default;
 };
+
+// Advance the swing animation by dt. Updates swing_rotation_offset and melee_forward_offset.
+// Returns true on the single frame the hitbox should be checked (t >= 0.40 crossing).
+// Clears is_swinging automatically when the full cycle completes. No-op if not swinging.
+bool weapon_swing_update(Weapon *w, float dt);

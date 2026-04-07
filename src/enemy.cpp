@@ -5,6 +5,8 @@
 #include "weapons/dagger.h"
 #include "game.h"
 #include "player.h"   // FacingDirection, SPRITE_SCALE constants
+#include "effects.h"
+#include "collision_system.h"
 #include "raymath.h"
 #include <algorithm>
 #include <cmath>
@@ -43,6 +45,15 @@ static constexpr float ROT_LERP_SPEED = 18.0f;
 static constexpr float RECOIL_DECAY   = 12.0f;
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
+
+// Effective attack range: melee weapons use weapon reach + orbit distance + small buffer;
+// ranged weapons use the global ATTACK_RANGE constant.
+static float enemy_attack_range(const Enemy& e)
+{
+    if (e.weapon && e.weapon->is_melee())
+        return e.weapon->melee_range() + ORBIT_DIST + 15.0f;
+    return ATTACK_RANGE;
+}
 
 static float randf(float lo, float hi)
 {
@@ -357,10 +368,13 @@ void enemies_clear(EnemyManager *em)
     em->enemies.clear();
 }
 
-void enemies_update(EnemyManager *em, BulletSystem *bullets, AudioState *audio,
+bool enemies_update(EnemyManager *em, BulletSystem *bullets, AudioState *audio,
                     const Tilemap *tm, SoundEventSystem *sound_events,
-                    Vector2 player_center, float dt)
+                    Vector2 player_center, float dt,
+                    Player *player, EffectsSystem *effects)
 {
+    bool player_hit = false;
+
     for (auto& e : em->enemies)
     {
         if (!e.alive) continue;
@@ -382,7 +396,7 @@ void enemies_update(EnemyManager *em, BulletSystem *bullets, AudioState *audio,
             if (e.ai_state == EnemyAIState::IDLE)
                 begin_visual_alert(e);
             else if (e.ai_state == EnemyAIState::SEARCH)
-                e.ai_state = (dist_to_player <= ATTACK_RANGE) ? EnemyAIState::ATTACK : EnemyAIState::CHASE;
+                e.ai_state = (dist_to_player <= enemy_attack_range(e)) ? EnemyAIState::ATTACK : EnemyAIState::CHASE;
         }
         else if (e.has_last_known_player_pos)
         {
@@ -425,7 +439,7 @@ void enemies_update(EnemyManager *em, BulletSystem *bullets, AudioState *audio,
             {
                 if (sees_player)
                 {
-                    e.ai_state = (dist_to_player <= ATTACK_RANGE) ? EnemyAIState::ATTACK : EnemyAIState::CHASE;
+                    e.ai_state = (dist_to_player <= enemy_attack_range(e)) ? EnemyAIState::ATTACK : EnemyAIState::CHASE;
                 }
                 else if (e.has_last_known_player_pos)
                 {
@@ -447,7 +461,7 @@ void enemies_update(EnemyManager *em, BulletSystem *bullets, AudioState *audio,
             {
                 look_toward(e, player_center);
 
-                if (dist_to_player <= ATTACK_RANGE)
+                if (dist_to_player <= enemy_attack_range(e))
                 {
                     e.ai_state = EnemyAIState::ATTACK;
                 }
@@ -458,28 +472,32 @@ void enemies_update(EnemyManager *em, BulletSystem *bullets, AudioState *audio,
                     is_moving  = true;
                 }
 
-                e.fire_cooldown -= dt;
-                if (e.fire_cooldown <= 0.0f && e.weapon)
+                // Ranged enemies fire while chasing; melee enemies only swing in ATTACK state.
+                if (e.weapon && !e.weapon->is_melee())
                 {
-                    float base_ang   = atan2f(e.aim_dir.y, e.aim_dir.x);
-                    float extra      = randf(-EXTRA_SPREAD_DEG, EXTRA_SPREAD_DEG) * DEG2RAD;
-                    Vector2 fire_dir = { cosf(base_ang + extra), sinf(base_ang + extra) };
+                    e.fire_cooldown -= dt;
+                    if (e.fire_cooldown <= 0.0f)
+                    {
+                        float base_ang   = atan2f(e.aim_dir.y, e.aim_dir.x);
+                        float extra      = randf(-EXTRA_SPREAD_DEG, EXTRA_SPREAD_DEG) * DEG2RAD;
+                        Vector2 fire_dir = { cosf(base_ang + extra), sinf(base_ang + extra) };
 
-                    e.weapon->fire(bullets, calc_muzzle(e), fire_dir, BulletOwner::ENEMY);
-                    if (sound_events)
-                        sound_events_push(sound_events, calc_muzzle(e),
-                                          weapon_sound_radius(*e.weapon), GUNSHOT_SOUND_LIFETIME,
-                                          SoundEventType::GUNSHOT);
-                    e.weapon->play_shot_sound(audio->master_volume, audio->sfx_volume);
-                    e.weapon_recoil_offset += e.weapon->recoil_distance();
+                        e.weapon->fire(bullets, calc_muzzle(e), fire_dir, BulletOwner::ENEMY);
+                        if (sound_events)
+                            sound_events_push(sound_events, calc_muzzle(e),
+                                              weapon_sound_radius(*e.weapon), GUNSHOT_SOUND_LIFETIME,
+                                              SoundEventType::GUNSHOT);
+                        e.weapon->play_shot_sound(audio->master_volume, audio->sfx_volume);
+                        e.weapon_recoil_offset += e.weapon->recoil_distance();
 
-                    e.weapon->current_ammo--;
-                    if (e.weapon->current_ammo <= 0)
-                        e.weapon->current_ammo = e.weapon->magazine_size();
+                        e.weapon->current_ammo--;
+                        if (e.weapon->current_ammo <= 0)
+                            e.weapon->current_ammo = e.weapon->magazine_size();
 
-                    e.fire_cooldown = (e.weapon->fire_rate() > 0.0f)
-                        ? 1.0f / e.weapon->fire_rate()
-                        : 0.15f;
+                        e.fire_cooldown = (e.weapon->fire_rate() > 0.0f)
+                            ? 1.0f / e.weapon->fire_rate()
+                            : 0.15f;
+                    }
                 }
             }
             else if (e.has_last_known_player_pos)
@@ -515,7 +533,7 @@ void enemies_update(EnemyManager *em, BulletSystem *bullets, AudioState *audio,
         case EnemyAIState::SEARCH:
             if (sees_player)
             {
-                e.ai_state = (dist_to_player <= ATTACK_RANGE) ? EnemyAIState::ATTACK : EnemyAIState::CHASE;
+                e.ai_state = (dist_to_player <= enemy_attack_range(e)) ? EnemyAIState::ATTACK : EnemyAIState::CHASE;
                 break;
             }
 
@@ -589,34 +607,53 @@ void enemies_update(EnemyManager *em, BulletSystem *bullets, AudioState *audio,
             if (sees_player)
             {
                 look_toward(e, player_center);
-                if (dist_to_player > ATTACK_RANGE * 1.2f)
+                float eff_range = enemy_attack_range(e);
+                if (dist_to_player > eff_range * 1.2f)
                 {
                     e.ai_state = EnemyAIState::CHASE;
                     break;
                 }
 
-                e.fire_cooldown -= dt;
-                if (e.fire_cooldown <= 0.0f && e.weapon)
+                if (e.weapon && e.weapon->is_melee())
                 {
-                    float base_ang = atan2f(e.aim_dir.y, e.aim_dir.x);
-                    float extra    = randf(-EXTRA_SPREAD_DEG, EXTRA_SPREAD_DEG) * DEG2RAD;
-                    Vector2 fire_dir = { cosf(base_ang + extra), sinf(base_ang + extra) };
+                    // Melee: start a swing when cooldown is ready and not already swinging.
+                    e.fire_cooldown -= dt;
+                    if (e.fire_cooldown <= 0.0f && !e.weapon->is_swinging)
+                    {
+                        e.weapon->is_swinging         = true;
+                        e.weapon->swing_timer         = 0.0f;
+                        e.weapon->melee_hit_triggered = false;
+                        e.weapon->play_shot_sound(audio->master_volume, audio->sfx_volume);
+                        e.fire_cooldown = (e.weapon->fire_rate() > 0.0f)
+                            ? 1.0f / e.weapon->fire_rate()
+                            : 0.8f;
+                    }
+                }
+                else if (e.weapon)
+                {
+                    e.fire_cooldown -= dt;
+                    if (e.fire_cooldown <= 0.0f)
+                    {
+                        float base_ang = atan2f(e.aim_dir.y, e.aim_dir.x);
+                        float extra    = randf(-EXTRA_SPREAD_DEG, EXTRA_SPREAD_DEG) * DEG2RAD;
+                        Vector2 fire_dir = { cosf(base_ang + extra), sinf(base_ang + extra) };
 
-                    e.weapon->fire(bullets, calc_muzzle(e), fire_dir, BulletOwner::ENEMY);
-                    if (sound_events)
-                        sound_events_push(sound_events, calc_muzzle(e),
-                                          weapon_sound_radius(*e.weapon), GUNSHOT_SOUND_LIFETIME,
-                                          SoundEventType::GUNSHOT);
-                    e.weapon->play_shot_sound(audio->master_volume, audio->sfx_volume);
-                    e.weapon_recoil_offset += e.weapon->recoil_distance();
+                        e.weapon->fire(bullets, calc_muzzle(e), fire_dir, BulletOwner::ENEMY);
+                        if (sound_events)
+                            sound_events_push(sound_events, calc_muzzle(e),
+                                              weapon_sound_radius(*e.weapon), GUNSHOT_SOUND_LIFETIME,
+                                              SoundEventType::GUNSHOT);
+                        e.weapon->play_shot_sound(audio->master_volume, audio->sfx_volume);
+                        e.weapon_recoil_offset += e.weapon->recoil_distance();
 
-                    e.weapon->current_ammo--;
-                    if (e.weapon->current_ammo <= 0)
-                        e.weapon->current_ammo = e.weapon->magazine_size(); // instant reload
+                        e.weapon->current_ammo--;
+                        if (e.weapon->current_ammo <= 0)
+                            e.weapon->current_ammo = e.weapon->magazine_size(); // instant reload
 
-                    e.fire_cooldown = (e.weapon->fire_rate() > 0.0f)
-                        ? 1.0f / e.weapon->fire_rate()
-                        : 0.15f;
+                        e.fire_cooldown = (e.weapon->fire_rate() > 0.0f)
+                            ? 1.0f / e.weapon->fire_rate()
+                            : 0.15f;
+                    }
                 }
             }
             else if (e.has_last_known_player_pos)
@@ -635,6 +672,18 @@ void enemies_update(EnemyManager *em, BulletSystem *bullets, AudioState *audio,
 
         case EnemyAIState::DEAD:
             break;
+        }
+
+        // ── Melee swing update + player hit detection ─────────────────
+        if (e.weapon && e.weapon->is_melee() && e.weapon->is_swinging)
+        {
+            bool hit_frame = weapon_swing_update(e.weapon.get(), dt);
+            if (hit_frame && player)
+            {
+                if (collision_melee_vs_player(e.weapon.get(), e.position, e.aim_dir,
+                                              player, effects))
+                    player_hit = true;
+            }
         }
 
         // ── Directional animation ─────────────────────────────────────
@@ -656,16 +705,21 @@ void enemies_update(EnemyManager *em, BulletSystem *bullets, AudioState *audio,
 
             float r    = e.weapon_render_rotation * DEG2RAD;
             Vector2 perp = { -e.aim_dir.y, e.aim_dir.x };
+            float fwd_push = e.weapon->melee_forward_offset;
             e.weapon_render_pos = {
                 e.position.x + cosf(r) * ORBIT_DIST + perp.x * SIDE_OFFSET
-                    - e.aim_dir.x * e.weapon_recoil_offset,
+                    - e.aim_dir.x * e.weapon_recoil_offset
+                    + e.aim_dir.x * fwd_push,
                 e.position.y + sinf(r) * ORBIT_DIST + perp.y * SIDE_OFFSET
                     - e.aim_dir.y * e.weapon_recoil_offset
+                    + e.aim_dir.y * fwd_push
             };
             e.weapon_recoil_offset -= e.weapon_recoil_offset * RECOIL_DECAY * dt;
             if (e.weapon_recoil_offset < 0.05f) e.weapon_recoil_offset = 0.0f;
         }
     }
+
+    return player_hit;
 }
 
 const char* enemy_ai_state_name(EnemyAIState state)
@@ -727,7 +781,7 @@ void enemies_draw(const EnemyManager *em)
                 flip ? -(float)e.weapon->sprite_height() : (float)e.weapon->sprite_height() };
             Rectangle dst = { e.weapon_render_pos.x, e.weapon_render_pos.y - sh * 0.5f, sw, sh };
             DrawTexturePro(e.weapon->texture(), src, dst, { 0.0f, sh * 0.5f },
-                           e.weapon_render_rotation, WHITE);
+                           e.weapon_render_rotation + e.weapon->swing_rotation_offset, WHITE);
         }
 
         // ── Sprite (animated, with enemy tint) ───────────────────────

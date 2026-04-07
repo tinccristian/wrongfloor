@@ -34,6 +34,7 @@ struct Enemy {
     float        search_timer = 0.0f;
     float        time_since_last_seen_player = 0.0f;
     float        hearing_cooldown = 0.0f;
+    bool         can_currently_see_player = false;
 
     // Per-shot cooldown (replaces burst pattern).
     float fire_cooldown = 0.0f;
@@ -86,13 +87,27 @@ void enemies_load_from_tilemap(EnemyManager *em, const Tilemap *tm);
 // Remove all enemies without unloading sprite sheets.
 void enemies_clear(EnemyManager *em);
 
+// Forward declarations needed for the new parameters.
+struct Player;
+struct EffectsSystem;
+
 // Run AI state machine, vision, movement, and weapon fire. Update animations.
-void enemies_update(EnemyManager *em, BulletSystem *bullets, AudioState *audio,
+// player and effects are used for melee-vs-player hit detection.
+// Returns true if the player was killed by an enemy melee weapon this frame.
+bool enemies_update(EnemyManager *em, BulletSystem *bullets, AudioState *audio,
                     const Tilemap *tm, SoundEventSystem *sound_events,
-                    Vector2 player_center, float dt);
+                    Vector2 player_center, float dt,
+                    Player *player = nullptr, EffectsSystem *effects = nullptr);
 
 // Draw all alive enemies and their weapons.
 void enemies_draw(const EnemyManager *em);
+
+const char* enemy_ai_state_name(EnemyAIState state);
+float enemies_get_search_time();
+void enemies_set_search_time(float seconds);
+float enemies_get_memory_time();
+void enemies_set_memory_time(float seconds);
+void enemies_reset_perception(EnemyManager *em);
 
 // Unload enemy resources.
 void enemies_cleanup(EnemyManager *em);

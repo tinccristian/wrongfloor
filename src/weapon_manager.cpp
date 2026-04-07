@@ -386,22 +386,11 @@ void weapons_update(WeaponManager *wm, BulletSystem *bullets, AudioState *audio,
             held->fire_cooldown_timer -= dt;
 
         // ── Melee swing animation ─────────────────────────────────────
-        if (held->is_melee() && held->is_swinging)
+        if (held->is_melee())
         {
-            held->swing_timer += dt;
-            float dur = held->swing_duration();
-            float t   = (dur > 0.0f) ? std::min(held->swing_timer / dur, 1.0f) : 1.0f;
-
-            // Sine envelope: smooth 0 → peak → 0 over the full swing.
-            float env = sinf(t * 3.14159f);
-            held->swing_rotation_offset = held->swing_peak_angle() * env;
-            held->melee_forward_offset  = held->swing_peak_fwd()   * env;
-
-            // Fire the hitbox once, at ~40% of the swing (first forward pass).
-            if (!held->melee_hit_triggered && t >= 0.40f)
+            bool hit_frame = weapon_swing_update(held, dt);
+            if (hit_frame)
             {
-                held->melee_hit_triggered = true;
-                // Start hitbox from the sprite grip (ORBIT_DIST + per-weapon extra offset).
                 float origin_dist = ORBIT_DIST + held->melee_origin_offset();
                 Vector2 melee_origin = Vector2Add(player_center,
                     Vector2Scale(aim_direction, origin_dist));
@@ -411,13 +400,6 @@ void weapons_update(WeaponManager *wm, BulletSystem *bullets, AudioState *audio,
                     enemies, effects, wm, held->melee_cone_half_angle());
                 if (hits > 0)
                     held->on_melee_hit(hits, audio->master_volume, audio->sfx_volume);
-            }
-
-            if (t >= 1.0f)
-            {
-                held->is_swinging           = false;
-                held->swing_rotation_offset = 0.0f;
-                held->melee_forward_offset  = 0.0f;
             }
         }
 
