@@ -1,4 +1,5 @@
 #include "bullets.h"
+#include "tilemap.h"
 #include "game.h"
 #include "raymath.h"
 #include <algorithm>
@@ -69,14 +70,40 @@ void bullets_clear(BulletSystem *system)
     system->bullets.clear();
 }
 
-void bullets_update(BulletSystem *system, float dt)
+void bullets_update(BulletSystem *system, const Tilemap *tm, float dt)
 {
     if (!system) return;
 
     for (Bullet &bullet : system->bullets)
     {
+        if (bullet.dead) continue;
+
         bullet.age += dt;
-        bullet.position = Vector2Add(bullet.position, Vector2Scale(bullet.velocity, dt));
+
+        Vector2 delta = Vector2Scale(bullet.velocity, dt);
+
+        // Step along the travel path to catch wall hits even at low framerates.
+        if (tm)
+        {
+            float dist      = Vector2Length(delta);
+            float step_size = (float)TILE_SIZE * 0.45f;
+            int   steps     = (dist > 0.0f) ? (int)ceilf(dist / step_size) : 1;
+            Vector2 step    = Vector2Scale(delta, 1.0f / (float)steps);
+            Vector2 pos     = bullet.position;
+
+            for (int s = 0; s < steps && !bullet.dead; ++s)
+            {
+                pos = Vector2Add(pos, step);
+                int tx = (int)floorf(pos.x / (float)TILE_SIZE);
+                int ty = (int)floorf(pos.y / (float)TILE_SIZE);
+                if (tilemap_is_solid(tm, tx, ty))
+                    bullet.dead = true;
+            }
+        }
+
+        if (!bullet.dead)
+            bullet.position = Vector2Add(bullet.position, delta);
+
         bullet.frame_timer += dt;
 
         while (bullet.frame_timer >= BULLET_FRAME_DURATION)

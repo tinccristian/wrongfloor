@@ -8,12 +8,13 @@
 #include "raymath.h"
 #include <algorithm>
 #include <cmath>
+#include <cstdlib>
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 static constexpr float ORBIT_DIST       = 22.0f;
 static constexpr float PICKUP_RANGE     = 40.0f;
-static constexpr float THROW_SPEED      = 600.0f;
-static constexpr float THROW_DRAG_BASE  = 0.88f;
+static constexpr float THROW_SPEED      = 950.0f;
+static constexpr float THROW_DRAG_BASE  = 0.94f;  // stops in ~1.3s at 60 fps
 static constexpr float THROW_STOP_SPEED = 10.0f;
 static constexpr float BOB_SPEED        = 2.5f;
 static constexpr float BOB_AMPLITUDE    = 2.0f;
@@ -27,7 +28,6 @@ static constexpr float RELOAD_BAR_Y_OFF = -50.0f;
 static constexpr int   GAMEPAD_ID       = 0;
 static constexpr float GUNSHOT_SOUND_LIFETIME = 0.28f;
 static constexpr float IMPACT_SOUND_LIFETIME  = 0.22f;
-static constexpr float THROW_IMPACT_RADIUS    = 150.0f;
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -58,8 +58,8 @@ static bool point_solid(const Tilemap *tm, float wx, float wy)
 
 static float weapon_sound_radius(const Weapon& weapon)
 {
-    if (weapon.type_name() == "deagle")         return 280.0f;
-    if (weapon.type_name() == "assault_riffle") return 220.0f;
+    if (weapon.type_name() == "deagle")         return sound_events_get_deagle_radius();
+    if (weapon.type_name() == "assault_riffle") return sound_events_get_rifle_radius();
     if (weapon.type_name() == "saber")          return 110.0f;
     if (weapon.type_name() == "dagger")         return 75.0f;
     return 180.0f;
@@ -68,10 +68,11 @@ static float weapon_sound_radius(const Weapon& weapon)
 // ── Draw helpers ──────────────────────────────────────────────────────────────
 
 // Draw a ground/thrown weapon centered at (cx, cy + bob_y).
+// rotation: degrees — used for spinning thrown weapons; 0 for settled ground items.
 // Uses the outline texture when on the ground.  If no outline texture is provided
 // (id == 0), falls back to a runtime 4-pass offset outline in WHITE.
 static void draw_ground_sprite(const Weapon& w, float cx, float cy,
-                                float bob_y, bool use_outline)
+                                float bob_y, bool use_outline, float rotation = 0.0f)
 {
     float sw = (float)w.sprite_width()  * w.render_scale();
     float sh = (float)w.sprite_height() * w.render_scale();
@@ -80,7 +81,7 @@ static void draw_ground_sprite(const Weapon& w, float cx, float cy,
 
     Rectangle src = { 0, 0, (float)w.texture().width, (float)w.texture().height };
     Rectangle dst = { x, y, sw, sh };
-    Vector2   org = { 0, 0 };
+    Vector2   org = { 0.0f, 0.0f };
 
     bool has_outline_tex = use_outline && (w.outline_texture().id != 0);
     if (has_outline_tex)
@@ -102,7 +103,11 @@ static void draw_ground_sprite(const Weapon& w, float cx, float cy,
             DrawTexturePro(w.texture(), src, odst, org, 0.0f, oc);
         }
     }
-    DrawTexturePro(w.texture(), src, dst, org, 0.0f, WHITE);
+
+    // Main sprite — rotate around the sprite centre for spinning thrown weapons.
+    Rectangle rdst = { cx, cy + bob_y, sw, sh };
+    Vector2   rorg = { sw * 0.5f, sh * 0.5f };
+    DrawTexturePro(w.texture(), src, rdst, rorg, rotation, WHITE);
 }
 
 // Draw the held weapon. Pivot at the grip (left/rear end of sprite).
@@ -205,26 +210,78 @@ void weapons_update(WeaponManager *wm, BulletSystem *bullets, AudioState *audio,
 
     // ── Thrown weapon physics ─────────────────────────────────────────
     float throw_drag = (dt > 0.0f) ? powf(THROW_DRAG_BASE, dt * 60.0f) : 1.0f;
+
+    // Collect enemies killed by thrown weapons. Processed after the loop so that
+    // pushing their weapons into wm->weapons doesn't invalidate our iterator.
+    struct ThrowKill { Enemy *enemy; Vector2 throw_vel; };
+    std::vector<ThrowKill> throw_kills;
+
     for (auto& w : wm->weapons)
     {
         if (!w->is_thrown) continue;
 
         Vector2 new_pos = Vector2Add(w->position, Vector2Scale(w->throw_velocity, dt));
-        w->throw_velocity = Vector2Scale(w->throw_velocity, throw_drag);
+        w->throw_velocity   = Vector2Scale(w->throw_velocity, throw_drag);
+        w->render_rotation += w->throw_spin_speed * dt;
+        w->throw_spin_speed *= throw_drag; // spin decelerates with velocity
 
         if (!point_solid(tm, new_pos.x, new_pos.y))
             w->position = new_pos;
 
-        if (point_solid(tm, new_pos.x, new_pos.y) ||
-            Vector2Length(w->throw_velocity) < THROW_STOP_SPEED)
+        // Check thrown weapon against enemy hitboxes.
+        if (enemies)
+        {
+            for (Enemy& e : enemies->enemies)
+            {
+                if (!e.alive) continue;
+                if (CheckCollisionPointRec(w->position, enemy_hitbox_rect(&e)))
+                {
+                    throw_kills.push_back({ &e, w->throw_velocity });
+                    w->is_thrown        = false;
+                    w->is_on_ground     = true;
+                    w->throw_velocity   = {};
+                    w->throw_spin_speed = 0.0f;
+                    break; // one kill per weapon per frame
+                }
+            }
+        }
+
+        if (w->is_thrown && (point_solid(tm, new_pos.x, new_pos.y) ||
+            Vector2Length(w->throw_velocity) < THROW_STOP_SPEED))
         {
             if (sound_events)
                 sound_events_push(sound_events, w->position,
-                                  THROW_IMPACT_RADIUS, IMPACT_SOUND_LIFETIME);
+                                  sound_events_get_impact_radius(), IMPACT_SOUND_LIFETIME,
+                                  SoundEventType::IMPACT);
 
-            w->is_thrown     = false;
-            w->is_on_ground  = true;
-            w->throw_velocity = {};
+            w->is_thrown        = false;
+            w->is_on_ground     = true;
+            w->throw_velocity   = {};
+            w->throw_spin_speed = 0.0f;
+        }
+    }
+
+    // Process throw kills — drop enemy weapons into the world after the throw loop.
+    for (auto& kill : throw_kills)
+    {
+        kill.enemy->alive    = false;
+        kill.enemy->ai_state = EnemyAIState::DEAD;
+
+        Vector2 dir = (Vector2LengthSqr(kill.throw_vel) > 0.0001f)
+            ? Vector2Normalize(kill.throw_vel)
+            : Vector2{ 0.0f, 1.0f };
+        effects_spawn_blood(effects, kill.enemy->position, dir);
+
+        if (kill.enemy->weapon)
+        {
+            Weapon *ew          = kill.enemy->weapon.get();
+            ew->position        = kill.enemy->position;
+            ew->is_held         = false;
+            ew->is_on_ground    = true;
+            ew->is_thrown       = false;
+            ew->recoil_offset   = 0.0f;
+            ew->render_rotation = kill.enemy->weapon_render_rotation;
+            wm->weapons.push_back(std::move(kill.enemy->weapon));
         }
     }
 
@@ -284,6 +341,9 @@ void weapons_update(WeaponManager *wm, BulletSystem *bullets, AudioState *audio,
             held->is_swinging         = false;
             held->swing_rotation_offset = 0.0f;
             held->melee_forward_offset  = 0.0f;
+            // Random spin: 300–600 deg/s, clockwise or counter-clockwise.
+            float spin = 300.0f + (float)(std::rand() % 300);
+            held->throw_spin_speed = (std::rand() % 2 == 0) ? spin : -spin;
             held->on_dropped();
             held = nullptr;
         }
@@ -414,7 +474,8 @@ void weapons_update(WeaponManager *wm, BulletSystem *bullets, AudioState *audio,
                         held->fire(bullets, muzzle, aim_direction);
                         if (sound_events)
                             sound_events_push(sound_events, muzzle,
-                                              weapon_sound_radius(*held), GUNSHOT_SOUND_LIFETIME);
+                                              weapon_sound_radius(*held), GUNSHOT_SOUND_LIFETIME,
+                                              SoundEventType::GUNSHOT);
 
                         held->current_ammo--;
                         held->fire_cooldown_timer = 1.0f / held->fire_rate();
@@ -460,8 +521,9 @@ void weapons_draw_ground(const WeaponManager *wm, Vector2 player_center, bool co
     {
         if (w->is_held) continue;
 
-        float bob = sinf(w->bob_timer) * BOB_AMPLITUDE;
-        draw_ground_sprite(*w, w->position.x, w->position.y, bob, w->is_on_ground);
+        float bob      = sinf(w->bob_timer) * BOB_AMPLITUDE;
+        float draw_rot = w->is_thrown ? w->render_rotation : 0.0f;
+        draw_ground_sprite(*w, w->position.x, w->position.y, bob, w->is_on_ground, draw_rot);
 
         float dsq = Vector2DistanceSqr(w->position, player_center);
         if (dsq < PICKUP_RANGE * PICKUP_RANGE)

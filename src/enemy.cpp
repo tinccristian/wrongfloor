@@ -1,6 +1,8 @@
 #include "enemy.h"
 #include "assault_rifle.h"
 #include "deagle.h"
+#include "weapons/saber.h"
+#include "weapons/dagger.h"
 #include "game.h"
 #include "player.h"   // FacingDirection, SPRITE_SCALE constants
 #include "raymath.h"
@@ -26,8 +28,9 @@ static constexpr float SOUND_ALERT_DELAY_MAX = 0.22f;
 static constexpr float CHASE_SPEED        = 185.0f;
 static constexpr float ATTACK_RANGE       = 200.0f;
 static constexpr float EXTRA_SPREAD_DEG   = 12.0f;   // extra inaccuracy per shot
-static constexpr float SEARCH_DURATION_MIN = 1.1f;
-static constexpr float SEARCH_DURATION_MAX = 2.0f;
+static float g_search_time               = 1.6f;
+static constexpr float SEARCH_TIME_JITTER = 0.45f;
+static float g_memory_time               = 2.2f;
 static constexpr float SEARCH_REACH_DIST   = 16.0f;
 static constexpr float SEARCH_TURN_SPEED   = 180.0f;
 static constexpr float HEARING_COOLDOWN    = 0.18f;
@@ -44,6 +47,18 @@ static constexpr float RECOIL_DECAY   = 12.0f;
 static float randf(float lo, float hi)
 {
     return lo + (hi - lo) * ((float)std::rand() / (float)RAND_MAX);
+}
+
+static float clamp_positive_time(float seconds, float minimum = 0.1f)
+{
+    return std::max(minimum, seconds);
+}
+
+static float random_search_duration()
+{
+    float min_t = std::max(0.2f, g_search_time - SEARCH_TIME_JITTER);
+    float max_t = g_search_time + SEARCH_TIME_JITTER;
+    return randf(min_t, max_t);
 }
 
 static float lerp_angle(float cur, float target, float speed, float dt)
@@ -175,8 +190,8 @@ static Vector2 calc_muzzle(const Enemy& e)
 
 static float weapon_sound_radius(const Weapon& weapon)
 {
-    if (weapon.type_name() == "deagle")         return 280.0f;
-    if (weapon.type_name() == "assault_riffle") return 220.0f;
+    if (weapon.type_name() == "deagle")         return sound_events_get_deagle_radius();
+    if (weapon.type_name() == "assault_riffle") return sound_events_get_rifle_radius();
     if (weapon.type_name() == "saber")          return 110.0f;
     if (weapon.type_name() == "dagger")         return 75.0f;
     return 180.0f;
@@ -217,7 +232,7 @@ static void begin_sound_alert(Enemy& e, Vector2 sound_pos)
 {
     e.investigation_target   = sound_pos;
     e.has_investigation_target = true;
-    e.search_timer           = randf(SEARCH_DURATION_MIN, SEARCH_DURATION_MAX);
+    e.search_timer           = random_search_duration();
     e.hearing_cooldown       = HEARING_COOLDOWN;
 
     if (e.ai_state == EnemyAIState::IDLE)
@@ -292,11 +307,36 @@ void enemies_load_from_tilemap(EnemyManager *em, const Tilemap *tm)
 
         e.aim_dir = { cosf(e.facing_angle * DEG2RAD), sinf(e.facing_angle * DEG2RAD) };
 
-        // Random weapon (50/50).
-        if (std::rand() % 2 == 0)
-            e.weapon = std::make_unique<AssaultRifle>();
+        // Assign weapon: explicit "weapon_type" property overrides random assignment.
+        auto wt_it = obj.properties.find("weapon_type");
+        if (wt_it != obj.properties.end())
+        {
+            const std::string& wt = wt_it->second;
+            if      (wt == "assault_riffle" || wt == "assault_rifle")
+                e.weapon = std::make_unique<AssaultRifle>();
+            else if (wt == "deagle")
+                e.weapon = std::make_unique<Deagle>();
+            else if (wt == "saber")
+                e.weapon = std::make_unique<Saber>();
+            else if (wt == "dagger")
+                e.weapon = std::make_unique<Dagger>();
+            else
+            {
+                // Unrecognised type — fall back to random.
+                e.weapon = (std::rand() % 2 == 0)
+                    ? std::unique_ptr<Weapon>(std::make_unique<AssaultRifle>())
+                    : std::unique_ptr<Weapon>(std::make_unique<Deagle>());
+                TraceLog(LOG_WARNING, "ENEMY: unknown weapon_type '%s', using random", wt.c_str());
+            }
+        }
         else
-            e.weapon = std::make_unique<Deagle>();
+        {
+            // No property — random 50/50.
+            if (std::rand() % 2 == 0)
+                e.weapon = std::make_unique<AssaultRifle>();
+            else
+                e.weapon = std::make_unique<Deagle>();
+        }
 
         e.weapon->current_ammo     = e.weapon->magazine_size();
         e.weapon->reserve_ammo     = e.weapon->initial_reserve();
@@ -329,6 +369,7 @@ void enemies_update(EnemyManager *em, BulletSystem *bullets, AudioState *audio,
         bool is_moving = false;
         float dist_to_player = Vector2Distance(e.position, player_center);
         bool sees_player = can_see_player(e, player_center, tm);
+        e.can_currently_see_player = sees_player;
 
         if (e.hearing_cooldown > 0.0f)
             e.hearing_cooldown = std::max(0.0f, e.hearing_cooldown - dt);
@@ -346,6 +387,14 @@ void enemies_update(EnemyManager *em, BulletSystem *bullets, AudioState *audio,
         else if (e.has_last_known_player_pos)
         {
             e.time_since_last_seen_player += dt;
+            if (e.time_since_last_seen_player >= g_memory_time)
+            {
+                e.investigation_target      = e.last_known_player_pos;
+                e.has_investigation_target  = true;
+                e.has_last_known_player_pos = false;
+                if (e.search_timer <= 0.0f)
+                    e.search_timer = random_search_duration();
+            }
         }
 
         if (!sees_player &&
@@ -419,7 +468,8 @@ void enemies_update(EnemyManager *em, BulletSystem *bullets, AudioState *audio,
                     e.weapon->fire(bullets, calc_muzzle(e), fire_dir, BulletOwner::ENEMY);
                     if (sound_events)
                         sound_events_push(sound_events, calc_muzzle(e),
-                                          weapon_sound_radius(*e.weapon), GUNSHOT_SOUND_LIFETIME);
+                                          weapon_sound_radius(*e.weapon), GUNSHOT_SOUND_LIFETIME,
+                                          SoundEventType::GUNSHOT);
                     e.weapon->play_shot_sound(audio->master_volume, audio->sfx_volume);
                     e.weapon_recoil_offset += e.weapon->recoil_distance();
 
@@ -449,7 +499,7 @@ void enemies_update(EnemyManager *em, BulletSystem *bullets, AudioState *audio,
                 else
                 {
                     e.ai_state     = EnemyAIState::SEARCH;
-                    e.search_timer = randf(SEARCH_DURATION_MIN, SEARCH_DURATION_MAX);
+                    e.search_timer = random_search_duration();
                 }
             }
             else if (e.has_investigation_target)
@@ -495,6 +545,7 @@ void enemies_update(EnemyManager *em, BulletSystem *bullets, AudioState *audio,
                     {
                         clear_targets(e);
                         e.ai_state = EnemyAIState::IDLE;
+                        e.can_currently_see_player = false;
                     }
                 }
             }
@@ -524,6 +575,7 @@ void enemies_update(EnemyManager *em, BulletSystem *bullets, AudioState *audio,
                     {
                         clear_targets(e);
                         e.ai_state = EnemyAIState::IDLE;
+                        e.can_currently_see_player = false;
                     }
                 }
             }
@@ -553,7 +605,8 @@ void enemies_update(EnemyManager *em, BulletSystem *bullets, AudioState *audio,
                     e.weapon->fire(bullets, calc_muzzle(e), fire_dir, BulletOwner::ENEMY);
                     if (sound_events)
                         sound_events_push(sound_events, calc_muzzle(e),
-                                          weapon_sound_radius(*e.weapon), GUNSHOT_SOUND_LIFETIME);
+                                          weapon_sound_radius(*e.weapon), GUNSHOT_SOUND_LIFETIME,
+                                          SoundEventType::GUNSHOT);
                     e.weapon->play_shot_sound(audio->master_volume, audio->sfx_volume);
                     e.weapon_recoil_offset += e.weapon->recoil_distance();
 
@@ -612,6 +665,44 @@ void enemies_update(EnemyManager *em, BulletSystem *bullets, AudioState *audio,
             e.weapon_recoil_offset -= e.weapon_recoil_offset * RECOIL_DECAY * dt;
             if (e.weapon_recoil_offset < 0.05f) e.weapon_recoil_offset = 0.0f;
         }
+    }
+}
+
+const char* enemy_ai_state_name(EnemyAIState state)
+{
+    switch (state)
+    {
+        case EnemyAIState::IDLE:   return "IDLE";
+        case EnemyAIState::ALERT:  return "ALERT";
+        case EnemyAIState::CHASE:  return "CHASE";
+        case EnemyAIState::SEARCH: return "SEARCH";
+        case EnemyAIState::ATTACK: return "ATTACK";
+        case EnemyAIState::DEAD:   return "DEAD";
+        default:                   return "UNKNOWN";
+    }
+}
+
+float enemies_get_search_time() { return g_search_time; }
+void enemies_set_search_time(float seconds) { g_search_time = clamp_positive_time(seconds); }
+
+float enemies_get_memory_time() { return g_memory_time; }
+void enemies_set_memory_time(float seconds) { g_memory_time = clamp_positive_time(seconds); }
+
+void enemies_reset_perception(EnemyManager *em)
+{
+    if (!em) return;
+    for (Enemy& enemy : em->enemies)
+    {
+        if (!enemy.alive) continue;
+        enemy.ai_state = EnemyAIState::IDLE;
+        enemy.alert_timer = 0.0f;
+        enemy.search_timer = 0.0f;
+        enemy.time_since_last_seen_player = 0.0f;
+        enemy.hearing_cooldown = 0.0f;
+        enemy.can_currently_see_player = false;
+        enemy.has_last_known_player_pos = false;
+        enemy.has_investigation_target = false;
+        enemy.fire_cooldown = 0.0f;
     }
 }
 

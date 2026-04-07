@@ -2,7 +2,6 @@
 #include "collision_system.h"
 #include "replay.h"
 
-static constexpr float FOOTSTEP_SOUND_RADIUS   = 90.0f;
 static constexpr float FOOTSTEP_SOUND_LIFETIME = 0.20f;
 
 static void load_level(GameState *state, int index, int screen_w, int screen_h)
@@ -44,7 +43,8 @@ static void emit_player_sound_events(const PlayerSoundTriggers& triggers, GameSt
 {
     if (!triggers.footstep_run) return;
     sound_events_push(&state->sound_events, player_center(&state->player),
-                      FOOTSTEP_SOUND_RADIUS, FOOTSTEP_SOUND_LIFETIME);
+                      sound_events_get_footstep_radius(), FOOTSTEP_SOUND_LIFETIME,
+                      SoundEventType::FOOTSTEP);
 }
 
 static void update_level_transition(GameState *state, int screen_w, int screen_h)
@@ -94,7 +94,7 @@ void gameplay_update(GameState *state, float dt, int screen_w, int screen_h, boo
     // ── Slow-motion dead update: effects + bullets only, no input ─────
     if (state->player_dead)
     {
-        bullets_update(&state->bullets, dt);  // dt is already scaled by main.cpp
+        bullets_update(&state->bullets, &state->tilemap, dt);  // dt is already scaled by main.cpp
         effects_update(&state->effects, &state->tilemap, dt);
         sound_events_update(&state->sound_events, dt);
         return;
@@ -112,7 +112,7 @@ void gameplay_update(GameState *state, float dt, int screen_w, int screen_h, boo
                    player_center(&state->player),
                    state->player.aim.direction, input_blocked, dt);
 
-    bullets_update(&state->bullets, dt);
+    bullets_update(&state->bullets, &state->tilemap, dt);
     collision_bullets_vs_enemies(&state->bullets, &state->enemies, &state->effects,
                                  &state->weapons);
 

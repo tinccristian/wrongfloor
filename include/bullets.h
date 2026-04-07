@@ -32,8 +32,10 @@ void bullets_spawn(BulletSystem *system, Vector2 origin, Vector2 direction, floa
 // Remove all live bullets without unloading the spritesheet.
 void bullets_clear(BulletSystem *system);
 
-// Advance bullet simulation and remove expired bullets.
-void bullets_update(BulletSystem *system, float dt);
+// Advance bullet simulation, check wall collisions, and remove expired bullets.
+// Pass tm=nullptr to skip wall collision (e.g. if tilemap is not yet loaded).
+struct Tilemap;
+void bullets_update(BulletSystem *system, const Tilemap *tm, float dt);
 
 // Draw every live bullet.
 void bullets_draw(const BulletSystem *system);

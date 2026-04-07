@@ -121,6 +121,7 @@ public:
     float fire_cooldown_timer = 0.0f;
 
     Vector2 throw_velocity{};       // active while is_thrown
+    float   throw_spin_speed = 0.0f; // degrees/sec rotation while airborne; 0 when grounded
 
     // Visual / animation state
     float   bob_timer       = 0.0f; // sine phase for ground bobbing

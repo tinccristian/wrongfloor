@@ -19,7 +19,7 @@ Top-down action game built with raylib 5.5 + C++17. Virtual resolution 1280×720
 | `weapons/saber.h/cpp` | Melee — wide 100° cone swing (80° arc, 0.3 s). Looping humming music stream while held; ignition on pickup. |
 | `weapons/dagger.h/cpp` | Melee — fast stab (7 rps, 0.1 s, 10 px forward jab). Accumulates blood pixel decals on blade per hit; cleared on drop. |
 | `weapon_manager.h/cpp` | Owns all live weapon instances (`vector<unique_ptr<Weapon>>`). Drives orbit, throw physics, pickup/throw/fire/reload input, ground bob, recoil decay, melee swing animation, HUD. Factory (`weapons_spawn`) maps type name → subclass. |
-| `bullets.h/cpp` | Bullet pool. Each bullet has position, velocity, owner tag, lifetime (0.9 s), animated 4-frame sprite with additive glow. |
+| `bullets.h/cpp` | Bullet pool. Each bullet has position, velocity, owner tag, lifetime (0.9 s), animated 4-frame sprite with additive glow. Wall collision via tilemap step-check each frame. |
 | `collision_system.h/cpp` | `collision_bullets_vs_enemies`, `collision_bullets_vs_player`, `collision_melee_vs_enemies`. Enemy/player death on hit; spawns blood effects. |
 | `effects.h/cpp` | Blood particle system: burst splatter, high-velocity spear pixels, fountain spray (0.3 s), ooze sources (2-5 s pool formation). Pixels settle into permanent stains. |
 | `tilemap.h/cpp` | Loads Tiled `.tmj` maps (JSON). Parses tile layers, object layers, tileset. Exposes solid-tile queries, layer draw by name prefix, spawn point and named-object lookup. |
@@ -71,9 +71,9 @@ Pause is **blocked** while any replay phase is active.
 | `saber` | Melee | 2 swings/s | — | — | — | — | 100° cone, 95 px range; humming music stream |
 | `dagger` | Melee | 7 stabs/s | — | — | — | — | 70 px rect hitbox, 50 px wide; blood decals accumulate on blade |
 
-All weapons can be picked up (E / controller Y) and thrown (G / right bumper) except melee that sets `is_throwable()` — both melee types inherit the default `true`, so they are throwable.
+All weapons can be picked up (E / controller Y) and thrown (G / right bumper) except melee that sets `is_throwable()` — both melee types inherit the default `true`, so they are throwable. Thrown weapons travel at 950 px/s with 0.97/frame drag and kill enemies on contact (drops their weapon, spawns blood).
 
-Enemy weapons: randomly assigned AssaultRifle or Deagle on spawn (50/50). Enemies have infinite ammo (instant reload on empty).
+Enemy weapons: assigned by Tiled `weapon_type` property ("assault_riffle", "deagle", "saber", "dagger"); falls back to random 50/50 AssaultRifle or Deagle if absent. Enemies have infinite ammo (instant reload on empty).
 
 ---
 
@@ -235,7 +235,7 @@ EndDrawing()
 - **`attack_hit.mp3`** — asset exists in `assets/sounds/` but is never loaded or played.
 - **`music_volume`** — stored in settings and respected by the saber hum stream, but no background music system exists.
 - **No BGM** — `audio.h` notes `music_volume` is "reserved for future BGM."
-- **Enemy melee weapons** — enemies are only ever given AssaultRifle or Deagle (50/50 random). Saber and dagger exist only as player-pickup weapons; no code path gives them to enemies.
+- **Enemy melee weapons** — enemies default to random AssaultRifle or Deagle. Saber and dagger can now be assigned via the Tiled `weapon_type` property, but no levels currently use this.
 - **Enemy instant reload** — when an enemy runs out of ammo, its magazine is silently reset to full (`current_ammo = magazine_size()`) with no delay or sound.
 - **Only 2 levels** — `LEVEL_COUNT = 2`; level cycling wraps back to level_01 after level_02.
 - **`weapons_save_held` / `weapons_restore_held`** — used for cross-level weapon persistence when hitting the level exit, but the `Restart` path in the pause menu calls `gameplay_reload_level` directly, which calls `weapons_clear` without saving, so the player loses their weapon on manual restart (intentional reset behavior).
