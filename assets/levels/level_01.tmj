@@ -224,6 +224,42 @@
                  "width":0,
                  "x":205,
                  "y":622
+                }, 
+                {
+                 "height":11,
+                 "id":19,
+                 "name":"door",
+                 "opacity":1,
+                 "properties":[
+                        {
+                         "name":"hinge",
+                         "type":"string",
+                         "value":"start"
+                        }],
+                 "rotation":0,
+                 "type":"",
+                 "visible":true,
+                 "width":97,
+                 "x":126,
+                 "y":531
+                }, 
+                {
+                 "height":91,
+                 "id":20,
+                 "name":"door",
+                 "opacity":1,
+                 "properties":[
+                        {
+                         "name":"hinge",
+                         "type":"string",
+                         "value":"end"
+                        }],
+                 "rotation":0,
+                 "type":"",
+                 "visible":true,
+                 "width":12,
+                 "x":282,
+                 "y":551
                 }],
          "opacity":1,
          "type":"objectgroup",
@@ -362,13 +398,13 @@
          "name":"foreground",
          "opacity":1,
          "type":"tilelayer",
-         "visible":true,
+         "visible":false,
          "width":40,
          "x":0,
          "y":0
         }],
  "nextlayerid":9,
- "nextobjectid":18,
+ "nextobjectid":21,
  "orientation":"orthogonal",
  "renderorder":"right-down",
  "tiledversion":"1.12.1",
